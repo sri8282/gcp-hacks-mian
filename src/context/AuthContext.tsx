@@ -25,13 +25,14 @@ export interface StoredAccount {
   pass: string;
   company?: string;
   title?: string;
+  avatarUrl?: string;
   joinedDate?: string;
 }
 
 interface AuthContextType {
   user: User | null;
   login: (role: UserRole, id?: string, pass?: string) => boolean;
-  loginWithGoogle: (role: UserRole, googleUser?: { name?: string; email?: string; photoUrl?: string }) => boolean;
+  loginWithVerifiedSession: (session: { token: string; user: User }) => boolean;
   registerNewUser: (
     role: UserRole,
     details: { name: string; email: string; id: string; pass: string; company?: string }
@@ -637,37 +638,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return false;
   };
 
-  const loginWithGoogle = (
-    role: UserRole,
-    googleUser?: { name?: string; email?: string; photoUrl?: string }
-  ): boolean => {
-    const userEmail = (
-      googleUser?.email ||
-      (role === 'seeker'
-        ? 'candidate@gmail.com'
-        : role === 'recruiter'
-        ? 'recruiter@gmail.com'
-        : 'admin@gmail.com')
-    )
-      .toLowerCase()
-      .trim();
+  const loginWithVerifiedSession = (session: { token: string; user: User }): boolean => {
+    if (!session || !session.user || !session.token) {
+      return false;
+    }
 
-    const userName =
-      googleUser?.name ||
-      (role === 'seeker'
-        ? 'Alex Morgan (Google Verified)'
-        : role === 'recruiter'
-        ? 'Sarah Jenkins (Google Verified)'
-        : 'David Vance (Google Verified)');
+    const verifiedUser = session.user;
+    const userEmail = (verifiedUser.email || '').toLowerCase().trim();
+    const userName = verifiedUser.name || 'Candidate';
+    const role = verifiedUser.role || 'seeker';
+
+    try {
+      localStorage.setItem('hirehub_session_token', session.token);
+    } catch {
+      // Ignore localStorage availability issues
+    }
 
     // 1. Check if account already exists
     const existing = accounts.find((a) => a.email.toLowerCase() === userEmail && a.role === role);
     if (existing) {
       const loggedUser: User = {
-        id: existing.id,
+        id: existing.id || verifiedUser.id,
         role: existing.role,
-        name: existing.name,
+        name: verifiedUser.name || existing.name,
         email: existing.email,
+        avatarUrl: verifiedUser.avatarUrl || existing.avatarUrl,
+        sessionToken: session.token,
         title:
           existing.title ||
           (role === 'seeker'
@@ -676,19 +672,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             ? 'Lead Technical Recruiter'
             : 'Super Admin & Platform Director'),
         company: existing.company,
-        ...(role === 'seeker' ? { seekerProfile: seekerProfile || DEFAULT_SEEKER_PROFILE } : {}),
+        ...(role === 'seeker'
+          ? {
+              seekerProfile: seekerProfile || {
+                ...DEFAULT_SEEKER_PROFILE,
+                fullName: userName,
+              },
+            }
+          : {}),
       };
       setUser(loggedUser);
       return true;
     }
 
-    // 2. Provision Google authenticated user
-    const newId = `google_${role}_${Date.now()}`;
+    // 2. Provision real verified user
     const newLoggedUser: User = {
-      id: newId,
+      id: verifiedUser.id || `google_${role}_${Date.now()}`,
       role,
       name: userName,
       email: userEmail,
+      avatarUrl: verifiedUser.avatarUrl,
+      sessionToken: session.token,
       title:
         role === 'seeker'
           ? 'Candidate'
@@ -707,11 +711,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const newAccount: StoredAccount = {
-      id: newId,
+      id: newLoggedUser.id,
       role,
       name: userName,
       email: userEmail,
-      pass: 'google_oauth',
+      avatarUrl: verifiedUser.avatarUrl,
+      pass: 'google_oauth_session',
       company: newLoggedUser.company,
       title: newLoggedUser.title,
       joinedDate: formatToIST(new Date()),
@@ -1050,7 +1055,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         user,
         login,
-        loginWithGoogle,
+        loginWithVerifiedSession,
         registerNewUser,
         createAccountByAdmin,
         accounts,

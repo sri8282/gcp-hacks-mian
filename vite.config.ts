@@ -9,7 +9,7 @@ function apiServerPlugin(): Plugin {
     name: 'hirehub-api-server',
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
-        if (req.url && req.url.startsWith('/api/')) {
+        if (req.url && (req.url.startsWith('/api/') || req.url.startsWith('/auth/'))) {
           let bodyText = '';
           req.on('data', (chunk) => {
             bodyText += chunk;

@@ -39,6 +39,104 @@ let storedApplications: JobApplication[] = [...INITIAL_APPLICATIONS];
 export const getStoredNotifications = () => storedNotifications;
 export const getStoredApplications = () => storedApplications;
 
+// Helper: Verify Google OAuth Token (ID Token or Access Token) via Google's official endpoints
+async function verifyGoogleToken(token: string): Promise<{
+  valid: boolean;
+  sub?: string;
+  email?: string;
+  email_verified?: boolean;
+  name?: string;
+  picture?: string;
+  error?: string;
+}> {
+  if (!token || typeof token !== 'string' || !token.trim()) {
+    return { valid: false, error: 'Missing or empty OAuth token.' };
+  }
+
+  const trimmedToken = token.trim();
+  const isJwt = trimmedToken.split('.').length === 3;
+
+  // 1. Try Google TokenInfo endpoint (for ID Tokens)
+  if (isJwt) {
+    try {
+      const googleRes = await fetch(
+        `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(trimmedToken)}`
+      );
+      if (googleRes.ok) {
+        const data: any = await googleRes.json();
+        if (data.email) {
+          const isVerified = data.email_verified === 'true' || data.email_verified === true;
+          if (!isVerified) {
+            return { valid: false, error: 'Google email address is not verified.' };
+          }
+          return {
+            valid: true,
+            sub: data.sub || data.user_id,
+            email: data.email,
+            email_verified: true,
+            name: data.name || `${data.given_name || ''} ${data.family_name || ''}`.trim() || data.email.split('@')[0],
+            picture: data.picture,
+          };
+        }
+      } else {
+        const errJson: any = await googleRes.json().catch(() => ({}));
+        const errMsg = errJson.error_description || errJson.error || 'Token rejected by Google identity service.';
+        return { valid: false, error: errMsg };
+      }
+    } catch (err: any) {
+      console.warn('Google tokeninfo fetch error:', err);
+    }
+  }
+
+  // 2. Try Google UserInfo endpoint with Bearer token (for Access Tokens)
+  try {
+    const googleRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${trimmedToken}` },
+    });
+    if (googleRes.ok) {
+      const data: any = await googleRes.json();
+      if (data.email) {
+        const isVerified = data.email_verified === true || data.email_verified === 'true';
+        if (!isVerified) {
+          return { valid: false, error: 'Google email address is not verified.' };
+        }
+        return {
+          valid: true,
+          sub: data.sub,
+          email: data.email,
+          email_verified: true,
+          name: data.name || `${data.given_name || ''} ${data.family_name || ''}`.trim() || data.email.split('@')[0],
+          picture: data.picture,
+        };
+      }
+    } else {
+      // 3. Fallback: try access_token on tokeninfo
+      const tokenInfoRes = await fetch(
+        `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(trimmedToken)}`
+      );
+      if (tokenInfoRes.ok) {
+        const data: any = await tokenInfoRes.json();
+        if (data.email) {
+          return {
+            valid: true,
+            sub: data.sub || data.user_id,
+            email: data.email,
+            email_verified: data.email_verified === 'true' || data.email_verified === true,
+            name: data.email.split('@')[0],
+          };
+        }
+      }
+      const errJson: any = await googleRes.json().catch(() => ({}));
+      const errMsg = errJson.error_description || errJson.error || 'Access token rejected by Google.';
+      return { valid: false, error: errMsg };
+    }
+  } catch (err: any) {
+    console.warn('Google userinfo fetch error:', err);
+  }
+
+  return { valid: false, error: 'Google OAuth verification failed. Invalid or expired token.' };
+}
+
 export async function handleApiRequest(
   url: string,
   method: string,
@@ -55,6 +153,63 @@ export async function handleApiRequest(
     } catch {
       body = {};
     }
+  }
+
+  // 0. POST /api/auth/google or POST /auth/google (Real Google Token Verification)
+  if ((pathname === '/api/auth/google' || pathname === '/auth/google') && method === 'POST') {
+    const rawToken = body.token || body.credential || body.access_token || body.id_token;
+    const requestedRole = (body.role as 'seeker' | 'recruiter' | 'admin') || 'seeker';
+
+    if (!rawToken) {
+      return {
+        status: 400,
+        data: {
+          success: false,
+          error: 'Missing Google OAuth token. Please complete the Google sign-in dialog.',
+        },
+      };
+    }
+
+    // Verify token directly against Google identity server
+    const verification = await verifyGoogleToken(rawToken);
+
+    if (!verification.valid || !verification.email) {
+      return {
+        status: 401,
+        data: {
+          success: false,
+          error: verification.error || 'Google token verification failed. Unauthorized.',
+        },
+      };
+    }
+
+    // Create session payload with real Google details verified by backend
+    const sessionToken = `hh_session_${Date.now()}_${Math.random().toString(36).substring(2, 12)}`;
+    const verifiedUser = {
+      id: `google_${verification.sub || Date.now()}`,
+      role: requestedRole,
+      name: verification.name || 'Candidate',
+      email: verification.email.toLowerCase(),
+      avatarUrl: verification.picture,
+      emailVerified: true,
+      title:
+        requestedRole === 'seeker'
+          ? 'Candidate'
+          : requestedRole === 'recruiter'
+          ? 'Lead Technical Recruiter'
+          : 'Super Admin & Platform Director',
+      company: requestedRole === 'recruiter' ? 'Stripeflow Payments' : undefined,
+    };
+
+    return {
+      status: 200,
+      data: {
+        success: true,
+        message: 'Google authentication verified successfully.',
+        token: sessionToken,
+        user: verifiedUser,
+      },
+    };
   }
 
   // 1. POST /api/notifications/send

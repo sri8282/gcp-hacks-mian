@@ -193,14 +193,25 @@ export const RoleNavbar: React.FC<RoleNavbarProps> = ({ activeTab, onTabChange, 
 
             {/* User Indicator */}
             <div className="flex items-center gap-2 pl-2 border-l border-neutral-200 dark:border-neutral-800">
-              <div className="w-7 h-7 rounded-full bg-neutral-100 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 flex items-center justify-center text-xs font-mono font-bold text-neutral-700 dark:text-neutral-200">
-                {user?.name?.charAt(0) || 'U'}
-              </div>
+              {user?.avatarUrl ? (
+                <img
+                  src={user.avatarUrl}
+                  alt={user.name || 'User'}
+                  className="w-7 h-7 rounded-full object-cover border border-neutral-300 dark:border-neutral-700 shrink-0"
+                  onError={(e) => {
+                    (e.target as HTMLElement).style.display = 'none';
+                  }}
+                />
+              ) : (
+                <div className="w-7 h-7 rounded-full bg-neutral-100 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 flex items-center justify-center text-xs font-mono font-bold text-neutral-700 dark:text-neutral-200 shrink-0">
+                  {user?.name?.charAt(0) || 'U'}
+                </div>
+              )}
               <div className="hidden lg:block text-left">
-                <p className="text-xs font-mono font-medium text-neutral-900 dark:text-white leading-none">
+                <p className="text-xs font-mono font-medium text-neutral-900 dark:text-white leading-none truncate max-w-[140px]">
                   {user?.name || 'Authenticated User'}
                 </p>
-                <p className="text-[10px] font-mono text-neutral-500 leading-tight truncate max-w-[130px]">
+                <p className="text-[10px] font-mono text-neutral-500 leading-tight truncate max-w-[140px]">
                   {user?.company || user?.email || 'Logged In'}
                 </p>
               </div>

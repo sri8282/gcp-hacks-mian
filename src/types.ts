@@ -20,6 +20,8 @@ export interface User {
   email: string;
   title?: string;
   company?: string;
+  avatarUrl?: string;
+  sessionToken?: string;
   seekerProfile?: SeekerProfile;
 }
 
