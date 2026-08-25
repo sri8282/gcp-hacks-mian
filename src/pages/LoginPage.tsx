@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
+import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import { useAuth } from '../context/AuthContext';
 import { UserRole } from '../types';
 import { ThemeToggle } from '../components/ThemeToggle';
@@ -16,6 +16,7 @@ import {
   Settings,
   CheckCircle2,
 } from 'lucide-react';
+import { api } from '../lib/api';
 
 const ROLE_CONFIG: Record<
   UserRole,
@@ -47,7 +48,7 @@ const ROLE_CONFIG: Record<
 // Google Client ID from environment or user storage fallback
 const DEFAULT_CLIENT_ID =
   (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID) ||
-  '858941360436-hirehub-recruitment.apps.googleusercontent.com';
+  '202244994641-bpquge5itk8362ib8j3v28ivo04jjdvq.apps.googleusercontent.com';
 
 interface GoogleAuthSectionProps {
   activeRole: UserRole;
@@ -70,28 +71,17 @@ const GoogleAuthSection: React.FC<GoogleAuthSectionProps> = ({
     onError('');
 
     try {
-      // 1. Send token to real backend verification endpoint (POST /api/auth/google or /auth/google)
-      const res = await fetch('/api/auth/google', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          token: rawToken,
-          role: activeRole,
-        }),
-      });
+      // Send token to real centralized API endpoint (POST /auth/google)
+      const data = await api.auth.googleLogin(rawToken);
 
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok || !data.success) {
+      if (!data || !data.token || !data.user) {
         throw new Error(
-          data.error ||
+          data?.message ||
             'Backend failed to verify your Google identity token. Please ensure the account is valid.'
         );
       }
 
-      // 2. Verified successfully: pass session payload to handler
+      // Verified successfully: pass session payload to handler
       onSuccess({
         token: data.token,
         user: data.user,
@@ -107,64 +97,35 @@ const GoogleAuthSection: React.FC<GoogleAuthSectionProps> = ({
     }
   };
 
-  // Trigger Google OAuth popup with authorization flow
-  const handleCustomGoogleLogin = useGoogleLogin({
-    onSuccess: async (tokenResponse) => {
-      if (tokenResponse.access_token) {
-        await verifyTokenWithBackend(tokenResponse.access_token);
-      }
-    },
-    onError: (errorResponse) => {
-      setIsAuthenticating(false);
-      onError(
-        `Google Sign In error: ${
-          errorResponse.error_description || errorResponse.error || 'Authentication dialog cancelled'
-        }`
-      );
-    },
-  });
-
   return (
-    <div>
-      {/* Real Google OAuth Trigger Button */}
-      <button
-        type="button"
-        onClick={() => handleCustomGoogleLogin()}
-        disabled={isAuthenticating}
-        className="w-full py-2.5 px-4 rounded-xl bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-850 text-neutral-800 dark:text-neutral-200 border border-neutral-300 dark:border-neutral-700 flex items-center justify-center gap-3 font-sans text-xs font-medium shadow-xs hover:shadow transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-      >
-        {isAuthenticating ? (
-          <>
-            <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
-            <span className="font-mono text-xs">Verifying with Google identity servers...</span>
-          </>
-        ) : (
-          <>
-            {/* Official Google 4-Color G Mark SVG */}
-            <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
-              <path
-                fill="#4285F4"
-                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-              />
-              <path
-                fill="#34A853"
-                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-              />
-              <path
-                fill="#FBBC05"
-                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-              />
-              <path
-                fill="#EA4335"
-                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-              />
-            </svg>
-            <span className="font-medium tracking-normal text-neutral-800 dark:text-neutral-200">
-              Continue with Google
-            </span>
-          </>
-        )}
-      </button>
+    <div className="w-full">
+      {isAuthenticating ? (
+        <div className="w-full py-2.5 px-4 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 flex items-center justify-center gap-3 font-mono text-xs">
+          <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
+          <span>Verifying with Google identity servers...</span>
+        </div>
+      ) : (
+        <div className="w-full flex justify-center [&>div]:w-full">
+          <GoogleLogin
+            onSuccess={async (credentialResponse) => {
+              if (credentialResponse.credential) {
+                await verifyTokenWithBackend(credentialResponse.credential);
+              } else {
+                onError('Google credential token was not received.');
+              }
+            }}
+            onError={() => {
+              setIsAuthenticating(false);
+              onError('Google Sign In was cancelled or failed.');
+            }}
+            theme="outline"
+            size="large"
+            text="continue_with"
+            shape="rectangular"
+            width="100%"
+          />
+        </div>
+      )}
     </div>
   );
 };
@@ -183,6 +144,7 @@ export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleAuthenticating, setIsGoogleAuthenticating] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   const [customClientId, setCustomClientId] = useState(() => {
@@ -212,9 +174,10 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
+    setIsSubmitting(true);
 
     const trimmedEmail = email.trim().toLowerCase();
     const trimmedPass = password.trim();
@@ -223,31 +186,44 @@ export const LoginPage: React.FC = () => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(trimmedEmail)) {
       setErrorMessage('Please enter a valid email address.');
+      setIsSubmitting(false);
       return;
     }
 
     if (!trimmedPass) {
       setErrorMessage('Please enter your password.');
+      setIsSubmitting(false);
       return;
     }
 
-    if (activeRole === 'seeker' && authMode === 'register') {
-      registerNewUser('seeker', {
-        name: name.trim() || 'Candidate',
-        email: trimmedEmail,
-        id: `user_${Date.now()}`,
-        pass: trimmedPass,
-      });
-      navigate('/seeker/dashboard');
-    } else {
-      const success = login(activeRole, trimmedEmail, trimmedPass);
-      if (success) {
-        navigate(`/${activeRole}/dashboard`);
+    try {
+      if (activeRole === 'seeker' && authMode === 'register') {
+        const res = await registerNewUser('seeker', {
+          name: name.trim() || 'Candidate',
+          email: trimmedEmail,
+          id: `user_${Date.now()}`,
+          pass: trimmedPass,
+        });
+        if (res.success) {
+          navigate('/seeker/dashboard');
+        } else {
+          setErrorMessage(res.message || 'Registration failed. Please try again.');
+        }
       } else {
-        setErrorMessage(
-          `Invalid credentials for ${ROLE_CONFIG[activeRole].label}. Please verify your email and password.`
-        );
+        const res = await login(activeRole, trimmedEmail, trimmedPass);
+        if (res.success) {
+          navigate(`/${activeRole}/dashboard`);
+        } else {
+          setErrorMessage(
+            res.message ||
+              `Invalid credentials for ${ROLE_CONFIG[activeRole].label}. Please verify your email and password.`
+          );
+        }
       }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'An unexpected error occurred during login.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -445,14 +421,24 @@ export const LoginPage: React.FC = () => {
               {/* Submit Button */}
               <button
                 type="submit"
-                className="w-full mt-2 py-3 text-xs font-mono font-bold rounded-xl bg-neutral-900 text-white dark:bg-white dark:text-black hover:bg-neutral-800 dark:hover:bg-neutral-200 flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer"
+                disabled={isSubmitting}
+                className="w-full mt-2 py-3 text-xs font-mono font-bold rounded-xl bg-neutral-900 text-white dark:bg-white dark:text-black hover:bg-neutral-800 dark:hover:bg-neutral-200 flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <span>
-                  {activeRole === 'seeker' && authMode === 'register'
-                    ? 'Create Candidate Account'
-                    : `Sign In as ${ROLE_CONFIG[activeRole].label}`}
-                </span>
-                <ArrowRight className="w-4 h-4" />
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
+                    <span>Processing Authentication...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>
+                      {activeRole === 'seeker' && authMode === 'register'
+                        ? 'Create Candidate Account'
+                        : `Sign In as ${ROLE_CONFIG[activeRole].label}`}
+                    </span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
             </form>
 

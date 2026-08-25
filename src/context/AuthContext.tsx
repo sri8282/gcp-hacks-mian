@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
   User,
   UserRole,
@@ -15,7 +15,7 @@ import {
 import { INITIAL_MOCK_JOBS, INITIAL_APPLICATIONS } from '../data/mockJobs';
 import { INITIAL_ADMIN_RECRUITERS } from '../data/mockAdminData';
 import { formatToIST } from '../utils/istTime';
-import { api, SendNotificationPayload } from '../utils/api';
+import { api, SendNotificationPayload, setAuthToken, clearAuthToken, getAuthToken } from '../lib/api';
 
 export interface StoredAccount {
   id: string;
@@ -31,19 +31,19 @@ export interface StoredAccount {
 
 interface AuthContextType {
   user: User | null;
-  login: (role: UserRole, id?: string, pass?: string) => boolean;
-  loginWithVerifiedSession: (session: { token: string; user: User }) => boolean;
+  login: (role: UserRole, id?: string, pass?: string) => Promise<{ success: boolean; message?: string }>;
+  loginWithVerifiedSession: (session: { token: string; user: any }) => boolean;
   registerNewUser: (
     role: UserRole,
-    details: { name: string; email: string; id: string; pass: string; company?: string }
-  ) => boolean;
+    details: { name: string; email: string; id?: string; pass: string; company?: string }
+  ) => Promise<{ success: boolean; message?: string }>;
   createAccountByAdmin: (details: {
     role: 'admin' | 'recruiter';
     name: string;
     email: string;
     pass: string;
     company?: string;
-  }) => { success: boolean; message: string; account?: StoredAccount };
+  }) => Promise<{ success: boolean; message: string; account?: StoredAccount }>;
   accounts: StoredAccount[];
   recruiters: AdminRecruiterUser[];
   setRecruiters: React.Dispatch<React.SetStateAction<AdminRecruiterUser[]>>;
@@ -79,8 +79,8 @@ interface AuthContextType {
   // Live Candidate Stats
   candidateStats: CandidateApplicationStats;
   refreshCandidateStats: () => Promise<void>;
+  isLoading: boolean;
 }
-
 
 const DEFAULT_SEEKER_PROFILE: SeekerProfile = {
   fullName: 'Alex Morgan',
@@ -129,41 +129,11 @@ const INITIAL_ACCOUNTS: StoredAccount[] = [
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Stored system accounts for login verification
-  const [accounts, setAccounts] = useState<StoredAccount[]>(() => {
-    const saved = sessionStorage.getItem('hirehub_accounts');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      } catch {
-        // fallback
-      }
-    }
-    return INITIAL_ACCOUNTS;
-  });
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Global Recruiters List
-  const [recruiters, setRecruiters] = useState<AdminRecruiterUser[]>(() => {
-    const saved = sessionStorage.getItem('hirehub_admin_recruiters');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      } catch {
-        // fallback
-      }
-    }
-    return INITIAL_ADMIN_RECRUITERS;
-  });
-
-  // Current logged in user
+  // Authenticated user session
   const [user, setUser] = useState<User | null>(() => {
-    const saved = sessionStorage.getItem('hirehub_auth_user');
+    const saved = sessionStorage.getItem('hirehub_user');
     if (saved) {
       try {
         return JSON.parse(saved);
@@ -175,7 +145,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   const [seekerProfile, setSeekerProfile] = useState<SeekerProfile | null>(() => {
-    const saved = sessionStorage.getItem('hirehub_seeker_profile');
+    const saved = localStorage.getItem('hirehub_seeker_profile');
     if (saved) {
       try {
         return JSON.parse(saved);
@@ -186,206 +156,80 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return DEFAULT_SEEKER_PROFILE;
   });
 
-  // Helper to sanitize any raw job
-  const sanitizeJob = (rawJob: any): Job => {
-    const company = rawJob.company || 'Tech Systems';
-    const initials =
-      rawJob.companyInitials ||
-      company
-        .split(' ')
-        .map((w: string) => w[0])
-        .join('')
-        .slice(0, 2)
-        .toUpperCase() ||
-      'TS';
-    const minLpa = typeof rawJob.minLpa === 'number' ? rawJob.minLpa : 12;
-    const maxLpa = typeof rawJob.maxLpa === 'number' ? rawJob.maxLpa : 20;
-    const payRange = rawJob.payRange || `₹${minLpa} - ₹${maxLpa} LPA`;
-    const minCgpa = typeof rawJob.minCgpa === 'number' ? rawJob.minCgpa : 7.0;
-    const skills =
-      Array.isArray(rawJob.skills) && rawJob.skills.length > 0
-        ? rawJob.skills
-        : ['React', 'TypeScript', 'Node.js'];
-    const responsibilities =
-      Array.isArray(rawJob.responsibilities) && rawJob.responsibilities.length > 0
-        ? rawJob.responsibilities
-        : [
-            'Design and implement resilient, high-performance software modules.',
-            'Collaborate with cross-functional product and engineering teams in agile sprints.',
-            'Maintain strict accessibility, documentation, and automated test coverage.',
-          ];
-    const interviewRounds =
-      Array.isArray(rawJob.interviewRounds) && rawJob.interviewRounds.length > 0
-        ? rawJob.interviewRounds
-        : [
-            { name: 'Round 1: Online Technical Assessment', date: 'Upcoming in IST', format: '60-min Coding Test' },
-            { name: 'Round 2: Domain Architecture & System Design', date: 'Upcoming in IST', format: '45-min Technical Review' },
-            { name: 'Round 3: Engineering Culture & Offer Discussion', date: 'Upcoming in IST', format: '30-min Video Call' },
-          ];
-    const customQuestions =
-      Array.isArray(rawJob.customQuestions) && rawJob.customQuestions.length > 0
-        ? rawJob.customQuestions
-        : [
-            'What core technical experience makes you a strong fit for this position?',
-            'Describe a technical challenge you recently solved.',
-          ];
+  // Stored system accounts for display & admin audit
+  const [accounts, setAccounts] = useState<StoredAccount[]>(() => {
+    const saved = sessionStorage.getItem('hirehub_accounts');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    return INITIAL_ACCOUNTS;
+  });
 
-    return {
-      ...rawJob,
-      id: rawJob.id || `job-${Date.now()}`,
-      title: rawJob.title || 'Software Engineer',
-      company,
-      companyInitials: initials,
-      companyColor: rawJob.companyColor || 'bg-neutral-800 text-neutral-200 border-neutral-700',
-      companyLinkedInUrl:
-        rawJob.companyLinkedInUrl ||
-        `https://linkedin.com/company/${company.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
-      minLpa,
-      maxLpa,
-      payRange,
-      workplaceType: rawJob.workplaceType || 'Remote',
-      location: rawJob.location || 'Bengaluru, KA (Remote)',
-      category: rawJob.category || 'Engineering',
-      minCgpa,
-      openFrom: rawJob.openFrom || '2026-08-15T09:00:00',
-      closeOn: rawJob.closeOn || '2026-09-30T23:59:00',
-      openFromText: rawJob.openFromText || '15 Aug 2026, 09:00 AM IST',
-      closeOnText: rawJob.closeOnText || '30 Sep 2026, 11:59 PM IST',
-      deadlineText: rawJob.deadlineText || '30 Sep 2026, 11:59 PM IST',
-      isClosed: Boolean(rawJob.isClosed),
-      adminForceStatus: rawJob.adminForceStatus || 'auto',
-      postedDate: rawJob.postedDate || '23 Aug 2026, 10:00 AM IST',
-      description:
-        rawJob.description ||
-        'Exciting engineering role working on scalable systems with a collaborative product engineering team.',
-      responsibilities,
-      skills,
-      interviewRounds,
-      customQuestions,
-    };
-  };
+  // Global Recruiters List
+  const [recruiters, setRecruiters] = useState<AdminRecruiterUser[]>(() => {
+    const saved = sessionStorage.getItem('hirehub_admin_recruiters');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    return INITIAL_ADMIN_RECRUITERS;
+  });
 
-  // Global Jobs state
+  // Jobs
   const [jobs, setJobs] = useState<Job[]>(() => {
     const saved = sessionStorage.getItem('hirehub_jobs');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map((j) => sanitizeJob(j));
-        }
-      } catch {
-        // fallback
-      }
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
     }
-    return INITIAL_MOCK_JOBS.map((j) => sanitizeJob(j));
+    return INITIAL_MOCK_JOBS;
   });
 
-  // Global Applications state
+  // Applications
   const [applications, setApplications] = useState<JobApplication[]>(() => {
     const saved = sessionStorage.getItem('hirehub_applications');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      } catch {
-        // fallback
-      }
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
     }
     return INITIAL_APPLICATIONS;
   });
 
-  // Broadcast Messages state
-  const [broadcastMessages, setBroadcastMessages] = useState<BroadcastMessage[]>(() => {
-    const saved = sessionStorage.getItem('hirehub_broadcast_messages');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      } catch {
-        // fallback
-      }
-    }
-    return [
-      {
-        id: 'bm-1',
-        jobId: 'job-1',
-        jobTitle: 'Senior Frontend Engineer (React & TypeScript)',
-        company: 'Stripeflow Payments',
-        recipientCount: 3,
-        recipientNames: ['Alex Morgan', 'Elena Rostova', 'Rohan Deshmukh'],
-        subject: 'Round 1 Assessment & Interview Details for Stripeflow Payments',
-        body: 'Dear Candidates, thank you for applying to the Senior Frontend Engineer role. Please check your candidate portal for scheduled technical assessments taking place this week in IST.',
-        sentAt: '23 Aug 2026, 05:45 PM IST',
-      },
-    ];
+  // Broadcast messages
+  const [broadcastMessages, setBroadcastMessages] = useState<BroadcastMessage[]>([]);
+
+  // Notifications
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+
+  // Candidate Live Stats
+  const [candidateStats, setCandidateStats] = useState<CandidateApplicationStats>({
+    totalApplied: 0,
+    interviewing: 0,
+    offered: 0,
+    rejected: 0,
   });
 
-  // Global Notifications State
-  const [notifications, setNotifications] = useState<AppNotification[]>(() => {
-    const saved = sessionStorage.getItem('hirehub_notifications');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      } catch {
-        // fallback
-      }
-    }
-    return [
-      {
-        id: 'notif-1',
-        senderRole: 'admin',
-        senderName: 'David Vance',
-        senderCompany: 'HireHub Platform Admin',
-        targetType: 'all',
-        title: 'Platform Maintenance & IST Window Updates',
-        message: 'Welcome to HireHub! Please ensure your academic CGPA and skills profile are up to date. Verified campus recruitment drives are now active with Indian Standard Time application deadlines.',
-        sentAt: '24 Aug 2026, 09:30 AM IST',
-        createdAtMs: Date.now() - 1000 * 60 * 60 * 12,
-        readBy: [],
-      },
-      {
-        id: 'notif-2',
-        senderRole: 'recruiter',
-        senderName: 'Sarah Jenkins',
-        senderCompany: 'Stripeflow Payments',
-        targetType: 'specific',
-        targetCandidateEmails: ['candidate@gmail.com', 'alex.morgan@iitb.ac.in', 'alex.morgan@berkeley.edu'],
-        targetCandidateNames: ['Alex Morgan'],
-        jobTitle: 'Senior Frontend Engineer (React & TypeScript)',
-        jobId: 'job-1',
-        title: 'Interview Stage Advanced: Stripeflow Payments',
-        message: 'Hello Alex, thank you for applying to the Senior Frontend Engineer position. Your profile has advanced to Round 1 Technical Assessment. Please review the pipeline details in your tracker.',
-        sentAt: '24 Aug 2026, 11:15 AM IST',
-        createdAtMs: Date.now() - 1000 * 60 * 60 * 4,
-        readBy: [],
-      },
-    ];
-  });
-
-  // Sync to session storage
-  useEffect(() => {
-    sessionStorage.setItem('hirehub_accounts', JSON.stringify(accounts));
-  }, [accounts]);
-
-  useEffect(() => {
-    sessionStorage.setItem('hirehub_admin_recruiters', JSON.stringify(recruiters));
-  }, [recruiters]);
-
+  // Save changes to sessionStorage
   useEffect(() => {
     if (user) {
-      sessionStorage.setItem('hirehub_auth_user', JSON.stringify(user));
+      sessionStorage.setItem('hirehub_user', JSON.stringify(user));
     } else {
-      sessionStorage.removeItem('hirehub_auth_user');
+      sessionStorage.removeItem('hirehub_user');
     }
   }, [user]);
 
   useEffect(() => {
     if (seekerProfile) {
-      sessionStorage.setItem('hirehub_seeker_profile', JSON.stringify(seekerProfile));
+      localStorage.setItem('hirehub_seeker_profile', JSON.stringify(seekerProfile));
     }
   }, [seekerProfile]);
 
@@ -398,309 +242,195 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [applications]);
 
   useEffect(() => {
-    sessionStorage.setItem('hirehub_broadcast_messages', JSON.stringify(broadcastMessages));
-  }, [broadcastMessages]);
+    sessionStorage.setItem('hirehub_accounts', JSON.stringify(accounts));
+  }, [accounts]);
 
   useEffect(() => {
-    sessionStorage.setItem('hirehub_notifications', JSON.stringify(notifications));
-  }, [notifications]);
+    sessionStorage.setItem('hirehub_admin_recruiters', JSON.stringify(recruiters));
+  }, [recruiters]);
 
-  // Periodically or on load, poll / sync notifications & stats from backend API
-  const refreshCandidateStats = async () => {
+  // Refresh live candidate stats & applications
+  const refreshCandidateStats = useCallback(async () => {
+    if (!user || user.role !== 'seeker') return;
     try {
-      const email = user?.email || 'candidate@gmail.com';
-      const name = user?.name || seekerProfile?.fullName;
-      const [statsRes, notifs] = await Promise.all([
-        api.getCandidateStats(email, name),
-        api.getNotifications(email, name),
+      const [statsRes, appsRes] = await Promise.all([
+        api.applications.getCandidateStats().catch(() => null),
+        api.applications.getMyApplications().catch(() => null),
       ]);
-      if (notifs && notifs.length > 0) {
-        setNotifications((prev) => {
-          // Merge unique notifications
-          const map = new Map<string, AppNotification>();
-          prev.forEach((n) => map.set(n.id, n));
-          notifs.forEach((n) => {
-            if (!map.has(n.id)) {
-              map.set(n.id, n);
-            }
-          });
-          return Array.from(map.values()).sort((a, b) => b.createdAtMs - a.createdAtMs);
+
+      if (statsRes) {
+        setCandidateStats({
+          totalApplied: statsRes.total_applied || 0,
+          interviewing: statsRes.interviewing || statsRes.interviewing_or_in_review || 0,
+          offered: statsRes.offered || 0,
+          rejected: statsRes.rejected || 0,
         });
       }
-    } catch {
-      // ignore
-    }
-  };
 
+      if (appsRes && Array.isArray(appsRes) && appsRes.length > 0) {
+        const mappedApps: JobApplication[] = appsRes.map((a: any) => ({
+          id: a.id,
+          jobId: a.job_id,
+          company: a.Job?.company || 'Company',
+          role: a.Job?.title || 'Position',
+          appliedDate: new Date(a.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+          lastUpdatedDate: new Date(a.updated_at || a.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+          daysInactive: Math.floor((Date.now() - new Date(a.updated_at || a.created_at).getTime()) / (1000 * 60 * 60 * 24)),
+          status: (a.status || 'Applied') as ApplicationStatus,
+          notes: a.notes || 'In review pipeline',
+          payRange: a.Job?.payRange || '12 - 18 LPA',
+          location: a.Job?.location || 'Remote',
+          candidateName: user.name,
+          candidateEmail: user.email,
+        }));
+        setApplications(mappedApps);
+      }
+    } catch (err) {
+      console.warn('refreshCandidateStats error:', err);
+    }
+  }, [user]);
+
+  // Refresh notifications
+  const refreshNotifications = useCallback(async () => {
+    if (!user) return;
+    try {
+      const notifsRes = await api.notifications.getNotifications().catch(() => null);
+      if (notifsRes && Array.isArray(notifsRes.notifications)) {
+        const mappedNotifs: AppNotification[] = notifsRes.notifications.map((n: any) => ({
+          id: n.id,
+          senderRole: n.sender_role || 'admin',
+          senderName: n.sender?.name || (n.sender_role === 'system' ? 'HireHub System' : 'Admin'),
+          senderCompany: n.sender_role === 'system' ? 'HireHub Platform' : undefined,
+          targetType: 'all',
+          message: n.message,
+          title: n.title || 'Platform Notification',
+          sentAt: n.created_at_ist || new Date(n.created_at).toLocaleString(),
+          createdAtMs: new Date(n.created_at).getTime(),
+          readBy: n.is_read ? [user.email] : [],
+        }));
+        setNotifications(mappedNotifs);
+      }
+    } catch (err) {
+      console.warn('refreshNotifications error:', err);
+    }
+  }, [user]);
+
+  // Load live data from real backend on mount and when user session changes
   useEffect(() => {
-    refreshCandidateStats();
-  }, [user?.email]);
+    const loadInitialData = async () => {
+      setIsLoading(true);
+      try {
+        // Fetch jobs from backend
+        const liveJobs = await api.jobs.getJobs().catch(() => null);
+        if (liveJobs && Array.isArray(liveJobs) && liveJobs.length > 0) {
+          const mappedJobs: Job[] = liveJobs.map((j: any) => ({
+            id: j.id,
+            title: j.title,
+            company: j.company,
+            companyInitials: (j.company || 'CO').slice(0, 2).toUpperCase(),
+            companyColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+            payRange: j.payRange || '12 - 24 LPA',
+            workplaceType: j.workplaceType || 'Remote',
+            location: j.location || 'India (Remote)',
+            category: j.category || 'Engineering',
+            minCgpa: j.minCgpa || 7.0,
+            openFrom: j.created_at || new Date().toISOString(),
+            closeOn: j.application_close_at || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            isClosed: j.status === 'closed',
+            postedDate: new Date(j.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+            description: j.description || '',
+            responsibilities: j.responsibilities || ['Develop scalable applications', 'Collaborate with team'],
+            skills: Array.isArray(j.requirements) ? j.requirements : ['Node.js', 'React', 'Cloud'],
+          }));
+          setJobs(mappedJobs);
+        }
 
-  // Compute live candidate application stats from single source of truth
-  const candidateStats: CandidateApplicationStats = {
-    totalApplied: applications.length,
-    interviewing: applications.filter((a) => a.status === 'Interviewing').length,
-    offered: applications.filter((a) => a.status === 'Offered').length,
-    rejected: applications.filter((a) => a.status === 'Rejected').length,
-  };
-
-  // Compute visible notifications for current user
-  const userEmail = (user?.email || 'candidate@gmail.com').toLowerCase();
-  const userName = (user?.name || seekerProfile?.fullName || 'Alex Morgan').toLowerCase();
-
-  const candidateNotifications = notifications.filter((n) => {
-    if (n.targetType === 'all') return true;
-    if (n.targetCandidateEmails?.some((e) => e.toLowerCase() === userEmail || userEmail.includes(e.toLowerCase()))) {
-      return true;
-    }
-    if (n.targetCandidateNames?.some((nm) => nm.toLowerCase() === userName || userName.includes(nm.toLowerCase()))) {
-      return true;
-    }
-    return false;
-  });
-
-  const unreadNotificationCount = candidateNotifications.filter(
-    (n) => !n.readBy.includes(userEmail) && !n.readBy.includes('candidate_user')
-  ).length;
-
-  const sendNotification = async (payload: SendNotificationPayload): Promise<{ success: boolean; message: string }> => {
-    const currentIst = formatToIST(new Date());
-    const newNotif: AppNotification = {
-      id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      senderRole: payload.senderRole,
-      senderName: payload.senderName || (payload.senderRole === 'admin' ? 'David Vance' : 'Recruitment Partner'),
-      senderCompany: payload.senderCompany || (payload.senderRole === 'admin' ? 'HireHub Admin' : 'Talent Acquisition Team'),
-      targetType: payload.targetType,
-      targetCandidateEmails: payload.targetCandidateEmails || [],
-      targetCandidateNames: payload.targetCandidateNames || [],
-      title: payload.title || (payload.jobTitle ? `Update on ${payload.jobTitle}` : `Announcement from ${payload.senderCompany || 'Admin'}`),
-      message: payload.message,
-      jobTitle: payload.jobTitle,
-      jobId: payload.jobId,
-      sentAt: currentIst,
-      createdAtMs: Date.now(),
-      readBy: [],
+        if (user && user.role === 'seeker') {
+          await Promise.all([refreshCandidateStats(), refreshNotifications()]);
+        }
+      } catch (err) {
+        console.warn('Initial data load warning:', err);
+      } finally {
+        setIsLoading(false);
+      }
     };
 
-    // Update local state immediately
-    setNotifications((prev) => [newNotif, ...prev]);
+    loadInitialData();
+  }, [user, refreshCandidateStats, refreshNotifications]);
 
-    // Send to backend API
-    try {
-      await api.sendNotification(payload);
-    } catch {
-      // offline fallback
-    }
-
-    return {
-      success: true,
-      message: `Notification successfully sent to ${
-        payload.targetType === 'all'
-          ? 'all candidate(s)'
-          : `${payload.targetCandidateEmails?.length || 1} targeted candidate(s)`
-      }.`,
-    };
-  };
-
-  const markNotificationAsRead = async (notifId: string): Promise<void> => {
-    const candidateId = userEmail;
-    setNotifications((prev) =>
-      prev.map((n) => {
-        if (n.id === notifId) {
-          if (!n.readBy.includes(candidateId)) {
-            return { ...n, readBy: [...n.readBy, candidateId] };
-          }
-        }
-        return n;
-      })
-    );
-    try {
-      await api.markNotificationAsRead(notifId, candidateId);
-    } catch {
-      // ignore
-    }
-  };
-
-  const markAllNotificationsAsRead = async (): Promise<void> => {
-    const candidateId = userEmail;
-    setNotifications((prev) =>
-      prev.map((n) => {
-        if (!n.readBy.includes(candidateId)) {
-          return { ...n, readBy: [...n.readBy, candidateId] };
-        }
-        return n;
-      })
-    );
-    try {
-      await api.markAllNotificationsAsRead(candidateId);
-    } catch {
-      // ignore
-    }
-  };
-
-
-  const login = (role: UserRole, id?: string, pass?: string): boolean => {
+  // Real backend login
+  const login = async (
+    role: UserRole,
+    id?: string,
+    pass?: string
+  ): Promise<{ success: boolean; message?: string }> => {
     const inputEmail = (id || '').trim().toLowerCase();
     const inputPass = (pass || '').trim();
 
-    // 1. Match against stored accounts
-    const matchingAccount = accounts.find(
-      (acc) => acc.role === role && acc.email.toLowerCase() === inputEmail && acc.pass === inputPass
-    );
+    try {
+      const res = await api.auth.login(inputEmail, inputPass);
+      if (res && res.token && res.user) {
+        setAuthToken(res.token);
 
-    if (matchingAccount) {
-      const loggedUser: User = {
-        id: matchingAccount.id,
-        role: matchingAccount.role,
-        name: matchingAccount.name,
-        email: matchingAccount.email,
-        title:
-          matchingAccount.title ||
-          (role === 'seeker'
-            ? 'Candidate'
-            : role === 'recruiter'
-            ? 'Lead Technical Recruiter'
-            : 'Super Admin & Platform Director'),
-        company: matchingAccount.company,
-        ...(role === 'seeker' ? { seekerProfile: seekerProfile || DEFAULT_SEEKER_PROFILE } : {}),
-      };
-      setUser(loggedUser);
-      return true;
-    }
+        const mappedRole: UserRole =
+          res.user.role === 'candidate' ? 'seeker' : (res.user.role as UserRole);
 
-    // 2. Match against recruiter list directly if standard 12345 pass used
-    if (role === 'recruiter') {
-      const matchedRec = recruiters.find(
-        (r) => r.email.toLowerCase() === inputEmail && (inputPass === '12345' || !inputPass)
-      );
-      if (matchedRec) {
-        const recruiterUser: User = {
-          id: matchedRec.id,
-          role: 'recruiter',
-          name: matchedRec.name,
-          email: matchedRec.email,
-          title: 'Lead Technical Recruiter',
-          company: matchedRec.company,
+        const loggedUser: User = {
+          id: res.user.id,
+          role: mappedRole,
+          name: res.user.name,
+          email: res.user.email,
+          avatarUrl: res.user.avatar_url,
+          sessionToken: res.token,
+          title:
+            mappedRole === 'seeker'
+              ? 'Candidate'
+              : mappedRole === 'recruiter'
+              ? 'Lead Technical Recruiter'
+              : 'Super Admin & Platform Director',
+          company: mappedRole === 'recruiter' ? 'Stripeflow Payments' : undefined,
+          ...(mappedRole === 'seeker' ? { seekerProfile: seekerProfile || DEFAULT_SEEKER_PROFILE } : {}),
         };
-        setUser(recruiterUser);
-        return true;
+
+        setUser(loggedUser);
+        sessionStorage.setItem('hirehub_user', JSON.stringify(loggedUser));
+        return { success: true };
       }
+    } catch (apiErr: any) {
+      console.warn('Backend login error:', apiErr.message);
+      return { success: false, message: apiErr.message || 'Invalid credentials or login failed.' };
     }
 
-    // 3. Fallback default credentials
-    if (role === 'seeker') {
-      const isValid = (inputEmail === 'candidate@gmail.com' && inputPass === '12345') || (!inputEmail && !inputPass);
-      if (isValid) {
-        const seekerUser: User = {
-          id: 'candidate_user',
-          role: 'seeker',
-          name: seekerProfile?.fullName || 'Alex Morgan',
-          email: inputEmail || 'candidate@gmail.com',
-          title: 'Senior CS Candidate (IIT Bombay)',
-          seekerProfile: seekerProfile || DEFAULT_SEEKER_PROFILE,
-        };
-        setUser(seekerUser);
-        return true;
-      }
-    }
-
-    if (role === 'recruiter') {
-      const isValid = (inputEmail === 'recruiter@gmail.com' && inputPass === '12345') || (!inputEmail && !inputPass);
-      if (isValid) {
-        const recruiterUser: User = {
-          id: 'recruiter_user',
-          role: 'recruiter',
-          name: 'Sarah Jenkins',
-          email: inputEmail || 'recruiter@gmail.com',
-          title: 'Lead Technical Recruiter',
-          company: 'Stripeflow Payments',
-        };
-        setUser(recruiterUser);
-        return true;
-      }
-    }
-
-    if (role === 'admin') {
-      const isValid = (inputEmail === 'admin@gmail.com' && inputPass === '12345') || (!inputEmail && !inputPass);
-      if (isValid) {
-        const adminUser: User = {
-          id: 'admin_user',
-          role: 'admin',
-          name: 'David Vance',
-          email: inputEmail || 'admin@gmail.com',
-          title: 'Super Admin & Platform Director',
-        };
-        setUser(adminUser);
-        return true;
-      }
-    }
-
-    return false;
+    return { success: false, message: 'Invalid credentials. Please verify your email and password.' };
   };
 
-  const loginWithVerifiedSession = (session: { token: string; user: User }): boolean => {
-    if (!session || !session.user || !session.token) {
-      return false;
-    }
+  // Google OAuth verified session login
+  const loginWithVerifiedSession = (session: { token: string; user: any }): boolean => {
+    if (!session || !session.user || !session.token) return false;
+
+    setAuthToken(session.token);
 
     const verifiedUser = session.user;
     const userEmail = (verifiedUser.email || '').toLowerCase().trim();
     const userName = verifiedUser.name || 'Candidate';
-    const role = verifiedUser.role || 'seeker';
+    const mappedRole: UserRole =
+      verifiedUser.role === 'candidate' ? 'seeker' : (verifiedUser.role || 'seeker');
 
-    try {
-      localStorage.setItem('hirehub_session_token', session.token);
-    } catch {
-      // Ignore localStorage availability issues
-    }
-
-    // 1. Check if account already exists
-    const existing = accounts.find((a) => a.email.toLowerCase() === userEmail && a.role === role);
-    if (existing) {
-      const loggedUser: User = {
-        id: existing.id || verifiedUser.id,
-        role: existing.role,
-        name: verifiedUser.name || existing.name,
-        email: existing.email,
-        avatarUrl: verifiedUser.avatarUrl || existing.avatarUrl,
-        sessionToken: session.token,
-        title:
-          existing.title ||
-          (role === 'seeker'
-            ? 'Candidate'
-            : role === 'recruiter'
-            ? 'Lead Technical Recruiter'
-            : 'Super Admin & Platform Director'),
-        company: existing.company,
-        ...(role === 'seeker'
-          ? {
-              seekerProfile: seekerProfile || {
-                ...DEFAULT_SEEKER_PROFILE,
-                fullName: userName,
-              },
-            }
-          : {}),
-      };
-      setUser(loggedUser);
-      return true;
-    }
-
-    // 2. Provision real verified user
-    const newLoggedUser: User = {
-      id: verifiedUser.id || `google_${role}_${Date.now()}`,
-      role,
+    const loggedUser: User = {
+      id: verifiedUser.id,
+      role: mappedRole,
       name: userName,
       email: userEmail,
-      avatarUrl: verifiedUser.avatarUrl,
+      avatarUrl: verifiedUser.avatar_url || verifiedUser.avatarUrl,
       sessionToken: session.token,
       title:
-        role === 'seeker'
+        mappedRole === 'seeker'
           ? 'Candidate'
-          : role === 'recruiter'
+          : mappedRole === 'recruiter'
           ? 'Lead Technical Recruiter'
           : 'Super Admin & Platform Director',
-      company: role === 'recruiter' ? 'Stripeflow Payments' : undefined,
-      ...(role === 'seeker'
+      company: mappedRole === 'recruiter' ? 'Stripeflow Payments' : undefined,
+      ...(mappedRole === 'seeker'
         ? {
             seekerProfile: seekerProfile || {
               ...DEFAULT_SEEKER_PROFILE,
@@ -710,152 +440,117 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         : {}),
     };
 
-    const newAccount: StoredAccount = {
-      id: newLoggedUser.id,
-      role,
-      name: userName,
-      email: userEmail,
-      avatarUrl: verifiedUser.avatarUrl,
-      pass: 'google_oauth_session',
-      company: newLoggedUser.company,
-      title: newLoggedUser.title,
-      joinedDate: formatToIST(new Date()),
-    };
-
-    setAccounts((prev) => [
-      newAccount,
-      ...prev.filter((a) => a.email.toLowerCase() !== userEmail || a.role !== role),
-    ]);
-    setUser(newLoggedUser);
+    setUser(loggedUser);
+    sessionStorage.setItem('hirehub_user', JSON.stringify(loggedUser));
     return true;
   };
 
-  const registerNewUser = (
+  // Real candidate signup
+  const registerNewUser = async (
     role: UserRole,
-    details: { name: string; email: string; id: string; pass: string; company?: string }
-  ): boolean => {
+    details: { name: string; email: string; id?: string; pass: string; company?: string }
+  ): Promise<{ success: boolean; message?: string }> => {
     const normalizedEmail = details.email.trim().toLowerCase();
-    const newUser: User = {
-      id: details.id || `user_${Date.now()}`,
-      role,
-      name: details.name || 'New User',
-      email: normalizedEmail || `${(details.name || 'user').toLowerCase().replace(/\s+/g, '')}@example.com`,
-      title: role === 'seeker' ? 'Candidate' : role === 'recruiter' ? 'Hiring Partner' : 'Platform Administrator',
-      company: details.company || (role === 'recruiter' ? 'TechCorp Solutions' : undefined),
-    };
-
-    const newAccount: StoredAccount = {
-      id: newUser.id,
-      role,
-      name: newUser.name,
-      email: newUser.email,
-      pass: details.pass.trim() || '12345',
-      company: newUser.company,
-      title: newUser.title,
-      joinedDate: formatToIST(new Date()),
-    };
-
-    setAccounts((prev) => [newAccount, ...prev.filter((a) => a.email.toLowerCase() !== newAccount.email.toLowerCase() || a.role !== role)]);
-
-    if (role === 'seeker') {
-      const newProfile: SeekerProfile = {
-        fullName: details.name || 'New Candidate',
-        collegeName: 'Stanford University',
-        cgpa: 8.5,
-        certifications: ['Full Stack Web Development'],
-        passingYear: '2026',
-        interestedRoles: ['Frontend', 'Fullstack'],
-        linkedInUrl: 'https://linkedin.com',
-        portfolioUrl: 'https://github.com',
-        isOnboarded: false,
-      };
-      newUser.seekerProfile = newProfile;
-      setSeekerProfile(newProfile);
+    try {
+      const res = await api.auth.signup(details.name, normalizedEmail, details.pass, 'candidate');
+      if (res && res.token && res.user) {
+        setAuthToken(res.token);
+        const newUser: User = {
+          id: res.user.id,
+          role: 'seeker',
+          name: res.user.name,
+          email: res.user.email,
+          sessionToken: res.token,
+          title: 'Candidate',
+          seekerProfile: {
+            ...DEFAULT_SEEKER_PROFILE,
+            fullName: res.user.name,
+          },
+        };
+        setUser(newUser);
+        sessionStorage.setItem('hirehub_user', JSON.stringify(newUser));
+        return { success: true };
+      }
+    } catch (err: any) {
+      console.error('Signup error:', err);
+      return { success: false, message: err.message || 'Registration failed' };
     }
-
-    setUser(newUser);
-    return true;
+    return { success: false, message: 'Registration failed' };
   };
 
   // Admin creating Recruiter or Admin accounts directly
-  const createAccountByAdmin = (details: {
+  const createAccountByAdmin = async (details: {
     role: 'admin' | 'recruiter';
     name: string;
     email: string;
     pass: string;
     company?: string;
-  }): { success: boolean; message: string; account?: StoredAccount } => {
+  }): Promise<{ success: boolean; message: string; account?: StoredAccount }> => {
     const normalizedEmail = details.email.trim().toLowerCase();
     const cleanName = details.name.trim();
     const cleanPass = details.pass.trim();
 
     if (!cleanName || !normalizedEmail || !cleanPass) {
-      return { success: false, message: 'Please provide valid Name, Email/ID, and Password.' };
+      return { success: false, message: 'Please provide valid Name, Email, and Password.' };
     }
 
-    const exists = accounts.some(
-      (acc) => acc.email.toLowerCase() === normalizedEmail && acc.role === details.role
-    );
-    if (exists) {
-      return {
-        success: false,
-        message: `An account with ${details.email} already exists for role "${details.role}".`,
-      };
-    }
-
-    const newId = details.role === 'recruiter' ? `rec-${Date.now()}` : `admin-${Date.now()}`;
-    const companyName = details.company?.trim() || (details.role === 'recruiter' ? `${cleanName} Hiring Group` : undefined);
-
-    const newAccount: StoredAccount = {
-      id: newId,
-      role: details.role,
-      name: cleanName,
-      email: normalizedEmail,
-      pass: cleanPass,
-      company: companyName,
-      title: details.role === 'admin' ? 'System Administrator' : 'Technical Recruiter',
-      joinedDate: formatToIST(new Date()),
-    };
-
-    setAccounts((prev) => [newAccount, ...prev]);
-
-    // If it's a recruiter account, add into the Recruiters directory list so Admin can audit & manage it immediately
-    if (details.role === 'recruiter') {
-      const initials = (companyName || cleanName)
-        .split(' ')
-        .map((w) => w[0])
-        .slice(0, 2)
-        .join('')
-        .toUpperCase() || 'RH';
-
-      const newRecruiter: AdminRecruiterUser = {
-        id: newId,
+    try {
+      const res = await api.auth.adminCreateUser({
+        role: details.role,
         name: cleanName,
         email: normalizedEmail,
-        company: companyName || 'Enterprise Partner',
-        companyInitials: initials,
-        companyColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-        companyLinkedInUrl: `https://linkedin.com/company/${(companyName || 'enterprise').toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
-        category: 'Technology & Services',
-        location: 'Bengaluru, KA (Remote)',
+        password: cleanPass,
+      });
+
+      const newAccount: StoredAccount = {
+        id: res.user.id,
+        role: details.role,
+        name: cleanName,
+        email: normalizedEmail,
+        pass: '••••••••',
+        company: details.company || (details.role === 'recruiter' ? `${cleanName} Hiring Group` : undefined),
+        title: details.role === 'admin' ? 'Super Admin' : 'Technical Recruiter',
         joinedDate: formatToIST(new Date()),
-        tier: 'Enterprise',
-        isDeactivated: false,
       };
 
-      setRecruiters((prev) => [newRecruiter, ...prev]);
-    }
+      setAccounts((prev) => [newAccount, ...prev]);
 
-    return {
-      success: true,
-      message: `${details.role === 'admin' ? 'Admin' : 'Recruiter'} account created successfully for ${cleanName} (${normalizedEmail}).`,
-      account: newAccount,
-    };
+      if (details.role === 'recruiter') {
+        const initials = cleanName.slice(0, 2).toUpperCase() || 'TC';
+        const newRecruiter: AdminRecruiterUser = {
+          id: res.user.id,
+          name: cleanName,
+          email: normalizedEmail,
+          company: details.company || `${cleanName} Hiring Group`,
+          companyInitials: initials,
+          companyColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+          category: 'Technology & Services',
+          location: 'Bengaluru, KA (Remote)',
+          joinedDate: formatToIST(new Date()),
+          tier: 'Enterprise',
+          isDeactivated: false,
+        };
+        setRecruiters((prev) => [newRecruiter, ...prev]);
+      }
+
+      return {
+        success: true,
+        message: `${details.role === 'admin' ? 'Admin' : 'Recruiter'} account created successfully for ${cleanName} (${normalizedEmail}).`,
+        account: newAccount,
+      };
+    } catch (err: any) {
+      console.error('Admin create user error:', err);
+      return {
+        success: false,
+        message: err.message || 'Failed to create user on backend.',
+      };
+    }
   };
 
   const logout = () => {
+    clearAuthToken();
+    sessionStorage.removeItem('hirehub_user');
     setUser(null);
-    sessionStorage.removeItem('hirehub_auth_user');
   };
 
   const updateSeekerProfile = (partial: Partial<SeekerProfile>) => {
@@ -896,30 +591,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     setJobs((prev) => [fullJob, ...prev]);
+
+    // Send to real backend API in background
+    api.jobs.createJob({
+      title: newJobData.title,
+      company: newJobData.company,
+      description: newJobData.description,
+      location: newJobData.location,
+      requirements: newJobData.skills,
+      application_close_at: newJobData.closeOn,
+    }).catch((err) => console.warn('createJob API sync error:', err));
   };
 
   const updateJob = (jobId: string, updatedData: Partial<Job>) => {
     setJobs((prev) =>
       prev.map((j) => (j.id === jobId ? { ...j, ...updatedData } : j))
     );
-
-    // Also cascade any company name or role title changes to existing job applications/tracker entries referencing it
-    if (updatedData.title || updatedData.company || updatedData.payRange || updatedData.location) {
-      setApplications((prev) =>
-        prev.map((app) => {
-          if (app.jobId === jobId) {
-            return {
-              ...app,
-              role: updatedData.title || app.role,
-              company: updatedData.company || app.company,
-              payRange: updatedData.payRange || app.payRange,
-              location: updatedData.location || app.location,
-            };
-          }
-          return app;
-        })
-      );
-    }
   };
 
   const deleteJob = (jobId: string) => {
@@ -964,7 +651,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       resumeFileName: applicationData?.resumeFileName || `${candidateName.replace(/\s+/g, '_')}_Resume.pdf`,
       answers: applicationData?.answers || [],
       candidateName,
-      candidateEmail: user?.email || 'alex.morgan@berkeley.edu',
+      candidateEmail: user?.email || 'candidate@gmail.com',
       candidateCgpa: seekerProfile?.cgpa ?? 8.4,
       candidateCollege: seekerProfile?.collegeName || 'UC Berkeley',
       candidatePassingYear: seekerProfile?.passingYear || '2025',
@@ -976,58 +663,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     setApplications((prev) => [newApp, ...prev]);
+
+    // Send application to real backend
+    api.jobs.applyToJob(job.id).catch((err) => console.warn('applyToJob API sync warning:', err));
+
     return { success: true, message: `Successfully applied to ${job.title} at ${job.company}!` };
   };
 
   const updateApplicationStatus = (id: string, status: ApplicationStatus) => {
     const currentIst = formatToIST(new Date());
-    let matchedApp: JobApplication | undefined;
-
     setApplications((prev) =>
-      prev.map((app) => {
-        if (app.id === id) {
-          matchedApp = { ...app, status, lastUpdatedDate: currentIst, daysInactive: 0 };
-          return matchedApp;
-        }
-        return app;
-      })
+      prev.map((app) => (app.id === id ? { ...app, status, lastUpdatedDate: currentIst, daysInactive: 0 } : app))
     );
 
-    // Call API status updater
-    api.updateApplicationStatus(id, status).catch(() => {});
-
-    // Create status change notification for candidate
-    if (matchedApp) {
-      const app = matchedApp as JobApplication;
-      let statusNotice = '';
-      if (status === 'Offered') {
-        statusNotice = `Congratulations! You have received an employment offer for ${app.role} at ${app.company}! Please check your candidate portal for next steps.`;
-      } else if (status === 'Interviewing') {
-        statusNotice = `Your application for ${app.role} at ${app.company} has advanced to the Interviewing stage.`;
-      } else if (status === 'Rejected') {
-        statusNotice = `Application update: Your application for ${app.role} at ${app.company} has been archived.`;
-      }
-
-      if (statusNotice) {
-        const autoNotif: AppNotification = {
-          id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-          senderRole: 'recruiter',
-          senderName: 'Talent Acquisition Team',
-          senderCompany: app.company,
-          targetType: 'specific',
-          targetCandidateEmails: app.candidateEmail ? [app.candidateEmail] : ['candidate@gmail.com'],
-          targetCandidateNames: app.candidateName ? [app.candidateName] : ['Alex Morgan'],
-          title: `Application Status: ${app.role} (${status})`,
-          message: statusNotice,
-          jobTitle: app.role,
-          jobId: app.jobId,
-          sentAt: currentIst,
-          createdAtMs: Date.now(),
-          readBy: [],
-        };
-        setNotifications((prev) => [autoNotif, ...prev]);
-      }
-    }
+    // Call real backend update status endpoint
+    api.applications.updateApplicationStatus(id, status).catch((err) => {
+      console.warn('updateApplicationStatus API warning:', err);
+    });
   };
 
   const updateApplicationNotes = (id: string, notes: string) => {
@@ -1049,6 +701,63 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     setBroadcastMessages((prev) => [newBroadcast, ...prev]);
   };
+
+  const sendNotification = async (payload: SendNotificationPayload): Promise<{ success: boolean; message: string }> => {
+    try {
+      const res = await api.notifications.sendNotification({
+        message: payload.message,
+        target_type: payload.targetType,
+        target_candidate_ids: payload.target_candidate_ids,
+      });
+
+      const currentIst = formatToIST(new Date());
+      const newNotif: AppNotification = {
+        id: `notif-${Date.now()}`,
+        senderRole: payload.senderRole,
+        senderName: payload.senderName,
+        senderCompany: payload.senderCompany,
+        targetType: payload.targetType,
+        targetCandidateEmails: payload.targetCandidateEmails,
+        targetCandidateNames: payload.targetCandidateNames,
+        title: payload.title || 'Platform Notification',
+        message: payload.message,
+        jobTitle: payload.jobTitle,
+        jobId: payload.jobId,
+        sentAt: currentIst,
+        createdAtMs: Date.now(),
+        readBy: [],
+      };
+      setNotifications((prev) => [newNotif, ...prev]);
+
+      return { success: true, message: res.message || 'Notification sent successfully.' };
+    } catch (err: any) {
+      console.error('sendNotification error:', err);
+      return { success: false, message: err.message || 'Failed to dispatch notification.' };
+    }
+  };
+
+  const markNotificationAsRead = async (notifId: string): Promise<void> => {
+    const candidateEmail = user?.email || 'read';
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === notifId ? { ...n, readBy: [...n.readBy, candidateEmail] } : n))
+    );
+    try {
+      await api.notifications.markNotificationAsRead(notifId);
+    } catch (err) {
+      console.warn('markNotificationAsRead API warning:', err);
+    }
+  };
+
+  const markAllNotificationsAsRead = async (): Promise<void> => {
+    const candidateEmail = user?.email || 'read';
+    setNotifications((prev) =>
+      prev.map((n) => ({ ...n, readBy: [...n.readBy, candidateEmail] }))
+    );
+  };
+
+  const unreadNotificationCount = notifications.filter(
+    (n) => !n.readBy.includes(user?.email || '')
+  ).length;
 
   return (
     <AuthContext.Provider
@@ -1078,19 +787,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         deleteApplication,
         broadcastMessages,
         sendBroadcastMessage,
-        notifications: candidateNotifications,
+        notifications,
         unreadNotificationCount,
         sendNotification,
         markNotificationAsRead,
         markAllNotificationsAsRead,
         candidateStats,
         refreshCandidateStats,
+        isLoading,
       }}
     >
       {children}
     </AuthContext.Provider>
   );
-
 };
 
 export const useAuth = () => {

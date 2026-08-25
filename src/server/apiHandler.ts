@@ -1,6 +1,57 @@
+import { OAuth2Client } from 'google-auth-library';
+import dotenv from 'dotenv';
 import { AppNotification, JobApplication, ApplicationStatus } from '../types';
 import { formatToIST } from '../utils/istTime';
 import { INITIAL_APPLICATIONS } from '../data/mockJobs';
+
+dotenv.config();
+
+const googleClientId = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID;
+const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+const oauth2Client = new OAuth2Client(googleClientId, googleClientSecret);
+
+interface StoredServerUser {
+  id: string;
+  role: 'candidate' | 'seeker' | 'recruiter' | 'admin';
+  name: string;
+  email: string;
+  avatarUrl?: string;
+  avatar_url?: string;
+  google_id?: string;
+  title?: string;
+  company?: string;
+  auth_provider?: string;
+  email_verified?: boolean;
+}
+
+let storedUsers: StoredServerUser[] = [
+  {
+    id: 'admin_user',
+    role: 'admin',
+    name: 'David Vance',
+    email: 'admin@gmail.com',
+    title: 'Super Admin & Platform Director',
+    auth_provider: 'local',
+  },
+  {
+    id: 'recruiter_user',
+    role: 'recruiter',
+    name: 'Sarah Jenkins',
+    email: 'recruiter@gmail.com',
+    company: 'Stripeflow Payments',
+    title: 'Lead Technical Recruiter',
+    auth_provider: 'local',
+  },
+  {
+    id: 'candidate_user',
+    role: 'candidate',
+    name: 'Alex Morgan',
+    email: 'candidate@gmail.com',
+    title: 'Senior CS Candidate (IIT Bombay)',
+    auth_provider: 'local',
+  },
+];
 
 // In-memory data store on server side for real sync across roles
 let storedNotifications: AppNotification[] = [
@@ -38,103 +89,43 @@ let storedApplications: JobApplication[] = [...INITIAL_APPLICATIONS];
 
 export const getStoredNotifications = () => storedNotifications;
 export const getStoredApplications = () => storedApplications;
+export const getStoredUsers = () => storedUsers;
 
-// Helper: Verify Google OAuth Token (ID Token or Access Token) via Google's official endpoints
-async function verifyGoogleToken(token: string): Promise<{
+// Helper: Verify Google OAuth ID Token via google-auth-library OAuth2Client
+async function verifyGoogleIdToken(token: string): Promise<{
   valid: boolean;
-  sub?: string;
-  email?: string;
-  email_verified?: boolean;
-  name?: string;
-  picture?: string;
+  payload?: any;
   error?: string;
 }> {
   if (!token || typeof token !== 'string' || !token.trim()) {
-    return { valid: false, error: 'Missing or empty OAuth token.' };
+    return { valid: false, error: 'Missing or empty OAuth credential token.' };
   }
 
-  const trimmedToken = token.trim();
-  const isJwt = trimmedToken.split('.').length === 3;
-
-  // 1. Try Google TokenInfo endpoint (for ID Tokens)
-  if (isJwt) {
-    try {
-      const googleRes = await fetch(
-        `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(trimmedToken)}`
-      );
-      if (googleRes.ok) {
-        const data: any = await googleRes.json();
-        if (data.email) {
-          const isVerified = data.email_verified === 'true' || data.email_verified === true;
-          if (!isVerified) {
-            return { valid: false, error: 'Google email address is not verified.' };
-          }
-          return {
-            valid: true,
-            sub: data.sub || data.user_id,
-            email: data.email,
-            email_verified: true,
-            name: data.name || `${data.given_name || ''} ${data.family_name || ''}`.trim() || data.email.split('@')[0],
-            picture: data.picture,
-          };
-        }
-      } else {
-        const errJson: any = await googleRes.json().catch(() => ({}));
-        const errMsg = errJson.error_description || errJson.error || 'Token rejected by Google identity service.';
-        return { valid: false, error: errMsg };
-      }
-    } catch (err: any) {
-      console.warn('Google tokeninfo fetch error:', err);
-    }
-  }
-
-  // 2. Try Google UserInfo endpoint with Bearer token (for Access Tokens)
   try {
-    const googleRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { Authorization: `Bearer ${trimmedToken}` },
+    const ticket = await oauth2Client.verifyIdToken({
+      idToken: token.trim(),
+      audience: process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID,
     });
-    if (googleRes.ok) {
-      const data: any = await googleRes.json();
-      if (data.email) {
-        const isVerified = data.email_verified === true || data.email_verified === 'true';
-        if (!isVerified) {
-          return { valid: false, error: 'Google email address is not verified.' };
-        }
-        return {
-          valid: true,
-          sub: data.sub,
-          email: data.email,
-          email_verified: true,
-          name: data.name || `${data.given_name || ''} ${data.family_name || ''}`.trim() || data.email.split('@')[0],
-          picture: data.picture,
-        };
-      }
-    } else {
-      // 3. Fallback: try access_token on tokeninfo
-      const tokenInfoRes = await fetch(
-        `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(trimmedToken)}`
-      );
-      if (tokenInfoRes.ok) {
-        const data: any = await tokenInfoRes.json();
-        if (data.email) {
-          return {
-            valid: true,
-            sub: data.sub || data.user_id,
-            email: data.email,
-            email_verified: data.email_verified === 'true' || data.email_verified === true,
-            name: data.email.split('@')[0],
-          };
-        }
-      }
-      const errJson: any = await googleRes.json().catch(() => ({}));
-      const errMsg = errJson.error_description || errJson.error || 'Access token rejected by Google.';
-      return { valid: false, error: errMsg };
-    }
-  } catch (err: any) {
-    console.warn('Google userinfo fetch error:', err);
-  }
+    const payload = ticket.getPayload();
 
-  return { valid: false, error: 'Google OAuth verification failed. Invalid or expired token.' };
+    if (!payload) {
+      return { valid: false, error: 'No payload returned from Google ID token verification.' };
+    }
+    if (!payload.email) {
+      return { valid: false, error: 'Google account has no associated email address.' };
+    }
+    if (!payload.email_verified) {
+      return { valid: false, error: 'Google email address is not verified.' };
+    }
+
+    return { valid: true, payload };
+  } catch (err: any) {
+    console.error('Google OAuth2Client.verifyIdToken error:', err?.message || err);
+    return {
+      valid: false,
+      error: err?.message || 'Google token verification failed. Invalid or expired token.',
+    };
+  }
 }
 
 export async function handleApiRequest(
@@ -155,25 +146,24 @@ export async function handleApiRequest(
     }
   }
 
-  // 0. POST /api/auth/google or POST /auth/google (Real Google Token Verification)
+  // 0. POST /auth/google or POST /api/auth/google (Real Google OAuth Verification)
   if ((pathname === '/api/auth/google' || pathname === '/auth/google') && method === 'POST') {
-    const rawToken = body.token || body.credential || body.access_token || body.id_token;
-    const requestedRole = (body.role as 'seeker' | 'recruiter' | 'admin') || 'seeker';
+    const rawToken = body.credential || body.idToken || body.id_token || body.token;
 
     if (!rawToken) {
       return {
         status: 400,
         data: {
           success: false,
-          error: 'Missing Google OAuth token. Please complete the Google sign-in dialog.',
+          error: 'Missing Google OAuth credential token. Please provide "credential" or "idToken".',
         },
       };
     }
 
-    // Verify token directly against Google identity server
-    const verification = await verifyGoogleToken(rawToken);
+    // Verify Google ID token against Google servers using OAuth2Client
+    const verification = await verifyGoogleIdToken(rawToken);
 
-    if (!verification.valid || !verification.email) {
+    if (!verification.valid || !verification.payload) {
       return {
         status: 401,
         data: {
@@ -183,22 +173,71 @@ export async function handleApiRequest(
       };
     }
 
-    // Create session payload with real Google details verified by backend
-    const sessionToken = `hh_session_${Date.now()}_${Math.random().toString(36).substring(2, 12)}`;
-    const verifiedUser = {
-      id: `google_${verification.sub || Date.now()}`,
-      role: requestedRole,
-      name: verification.name || 'Candidate',
-      email: verification.email.toLowerCase(),
-      avatarUrl: verification.picture,
-      emailVerified: true,
+    const { email, email_verified, name, picture, sub, given_name, family_name } = verification.payload;
+
+    if (!email_verified) {
+      return {
+        status: 401,
+        data: {
+          success: false,
+          error: 'Google email address is not verified.',
+        },
+      };
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Look up user by verified email
+    let user = storedUsers.find((u) => u.email.toLowerCase() === normalizedEmail);
+
+    if (user) {
+      // Existing user found - log into existing account
+      if (picture && !user.avatar_url && !user.avatarUrl) {
+        user.avatar_url = picture;
+        user.avatarUrl = picture;
+      }
+      if (sub && !user.google_id) {
+        user.google_id = sub;
+      }
+    } else {
+      // Create new candidate account if none exists
+      const displayName =
+        name || `${given_name || ''} ${family_name || ''}`.trim() || normalizedEmail.split('@')[0];
+      user = {
+        id: `cand_${sub || Date.now()}`,
+        role: 'candidate',
+        name: displayName,
+        email: normalizedEmail,
+        avatar_url: picture,
+        avatarUrl: picture,
+        google_id: sub,
+        title: 'Candidate',
+        auth_provider: 'google',
+        email_verified: true,
+      };
+      storedUsers.push(user);
+    }
+
+    // Issue the app's normal session token
+    const sessionToken = `hh_session_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+
+    const userPayload = {
+      id: user.id,
+      role: user.role === 'seeker' ? 'candidate' : user.role,
+      name: user.name,
+      email: user.email,
+      avatar_url: user.avatar_url || user.avatarUrl,
+      avatarUrl: user.avatar_url || user.avatarUrl,
       title:
-        requestedRole === 'seeker'
-          ? 'Candidate'
-          : requestedRole === 'recruiter'
+        user.title ||
+        (user.role === 'admin'
+          ? 'Super Admin & Platform Director'
+          : user.role === 'recruiter'
           ? 'Lead Technical Recruiter'
-          : 'Super Admin & Platform Director',
-      company: requestedRole === 'recruiter' ? 'Stripeflow Payments' : undefined,
+          : 'Candidate'),
+      company: user.company,
+      auth_provider: user.auth_provider || 'google',
+      email_verified: true,
     };
 
     return {
@@ -207,7 +246,82 @@ export async function handleApiRequest(
         success: true,
         message: 'Google authentication verified successfully.',
         token: sessionToken,
-        user: verifiedUser,
+        user: userPayload,
+      },
+    };
+  }
+
+  // 0b. POST /auth/login or POST /api/auth/login
+  if ((pathname === '/api/auth/login' || pathname === '/auth/login') && method === 'POST') {
+    const { email } = body;
+    const normalizedEmail = (email || '').toLowerCase().trim();
+    const user = storedUsers.find((u) => u.email.toLowerCase() === normalizedEmail);
+
+    if (!user) {
+      return { status: 401, data: { success: false, error: 'Invalid credentials.' } };
+    }
+
+    const sessionToken = `hh_session_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+    return {
+      status: 200,
+      data: {
+        success: true,
+        message: 'Login successful.',
+        token: sessionToken,
+        user: {
+          id: user.id,
+          role: user.role === 'seeker' ? 'candidate' : user.role,
+          name: user.name,
+          email: user.email,
+          avatar_url: user.avatar_url || user.avatarUrl,
+          avatarUrl: user.avatar_url || user.avatarUrl,
+          title: user.title,
+          company: user.company,
+          auth_provider: user.auth_provider,
+        },
+      },
+    };
+  }
+
+  // 0c. POST /auth/signup or POST /api/auth/signup
+  if ((pathname === '/api/auth/signup' || pathname === '/auth/signup') && method === 'POST') {
+    const { name, email, role } = body;
+    const normalizedEmail = (email || '').toLowerCase().trim();
+
+    if (role && role !== 'candidate' && role !== 'seeker') {
+      return { status: 400, data: { success: false, error: 'Public signup is restricted to candidates' } };
+    }
+
+    let existing = storedUsers.find((u) => u.email.toLowerCase() === normalizedEmail);
+    if (existing) {
+      return { status: 409, data: { success: false, error: 'Email already registered' } };
+    }
+
+    const newUser: StoredServerUser = {
+      id: `cand_${Date.now()}`,
+      role: 'candidate',
+      name: name || 'Candidate',
+      email: normalizedEmail,
+      title: 'Candidate',
+      auth_provider: 'local',
+      email_verified: true,
+    };
+    storedUsers.push(newUser);
+
+    const sessionToken = `hh_session_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+    return {
+      status: 201,
+      data: {
+        success: true,
+        message: 'User created successfully',
+        token: sessionToken,
+        user: {
+          id: newUser.id,
+          name: newUser.name,
+          email: newUser.email,
+          role: newUser.role,
+          auth_provider: newUser.auth_provider,
+        },
       },
     };
   }

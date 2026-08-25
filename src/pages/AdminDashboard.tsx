@@ -140,7 +140,7 @@ export const AdminDashboard: React.FC = () => {
   };
 
   // Handle Create Account Submission
-  const handleCreateAccount = (e: React.FormEvent) => {
+  const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreateError('');
     setCreateSuccess(null);
@@ -165,23 +165,27 @@ export const AdminDashboard: React.FC = () => {
       return;
     }
 
-    const result = createAccountByAdmin({
-      role: newRole,
-      name: trimmedName,
-      email: trimmedEmail,
-      pass: trimmedPass,
-      company: newRole === 'recruiter' ? newCompany.trim() || `${trimmedName} Hiring Group` : undefined,
-    });
+    try {
+      const result = await createAccountByAdmin({
+        role: newRole,
+        name: trimmedName,
+        email: trimmedEmail,
+        pass: trimmedPass,
+        company: newRole === 'recruiter' ? newCompany.trim() || `${trimmedName} Hiring Group` : undefined,
+      });
 
-    if (result.success) {
-      setCreateSuccess(result.message);
-      showToast(result.message);
-      setNewName('');
-      setNewEmail('');
-      setNewPassword('');
-      setNewCompany('');
-    } else {
-      setCreateError(result.message);
+      if (result.success) {
+        setCreateSuccess(result.message);
+        showToast(result.message);
+        setNewName('');
+        setNewEmail('');
+        setNewPassword('');
+        setNewCompany('');
+      } else {
+        setCreateError(result.message);
+      }
+    } catch (err: any) {
+      setCreateError(err.message || 'Failed to create user account.');
     }
   };
 
