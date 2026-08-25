@@ -1,0 +1,6 @@
+{
+  "name": "HireHub Job Portal",
+  "description": "Modern Job Portal featuring smart application tracking, role-based authentication, and dashboards for Job Seekers, Recruiters, and Admins.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
