@@ -7,6 +7,7 @@ const candidateRoutes = require('./routes/candidateRoutes');
 const recruiterRoutes = require('./routes/recruiterRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const internalRoutes = require('./routes/internalRoutes');
 
 const app = express();
 
@@ -33,6 +34,7 @@ app.use('/api/candidate', candidateRoutes);
 app.use('/api/recruiter', recruiterRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/internal', internalRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({

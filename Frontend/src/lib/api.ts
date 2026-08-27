@@ -458,6 +458,20 @@ export const api = {
         rejected: res.byStatus?.rejected || 0,
       };
     },
+
+    async checkAts(data: { jobId: string; resumeText?: string; candidateSkills?: string[] }) {
+      return apiRequest<{
+        success: boolean;
+        source: 'gemini-ai' | 'keyword-fallback';
+        matchScore: number;
+        strengths: string[];
+        gaps: string[];
+        summary: string;
+      }>('/applications/check-ats', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
   },
 
   // Candidate Module
@@ -488,6 +502,13 @@ export const api = {
 
     async getProfile() {
       return apiRequest<{ profile: any }>('/candidate/profile', { method: 'GET' });
+    },
+
+    async getResumeUploadUrl(fileName: string, contentType: string) {
+      return apiRequest<{ uploadUrl: string; filePath: string }>('/candidate/resume-upload-url', {
+        method: 'POST',
+        body: JSON.stringify({ fileName, contentType }),
+      });
     },
   },
 

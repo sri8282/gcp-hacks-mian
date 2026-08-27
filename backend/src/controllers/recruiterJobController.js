@@ -1,4 +1,5 @@
 const { Job, CandidateProfile, Notification } = require('../models');
+const { createNotification } = require('../services/notificationService');
 
 const createJob = async (req, res) => {
   try {
@@ -70,16 +71,15 @@ const createJob = async (req, res) => {
           );
         });
 
-        const notificationsToCreate = matchingProfiles.map((profile) => ({
-          userId: profile.userId,
-          type: 'new_eligible_job',
-          message: `New job opportunity: "${job.title}" at ${job.companyName || 'a company'} matches your profile.`,
-          isRead: false,
-        }));
-
-        if (notificationsToCreate.length > 0) {
-          await Notification.bulkCreate(notificationsToCreate);
-        }
+        await Promise.all(
+          matchingProfiles.map((profile) =>
+            createNotification(
+              profile.userId,
+              'new_eligible_job',
+              `New job opportunity: "${job.title}" at ${job.companyName || 'a company'} matches your profile.`
+            ).catch((err) => console.error(`Error sending new job notification to user ${profile.userId}:`, err))
+          )
+        );
       } catch (err) {
         console.error('Error dispatching new job notifications:', err);
       }

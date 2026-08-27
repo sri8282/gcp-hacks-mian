@@ -1,5 +1,83 @@
 const { Application, Job, CandidateProfile, Notification } = require('../models');
 const { calculateATS } = require('../services/atsService');
+const { generateUploadUrl } = require('../services/storageService');
+const { analyzeResumeMatch } = require('../services/geminiService');
+const { createNotification } = require('../services/notificationService');
+
+const checkAtsScore = async (req, res) => {
+  try {
+    const { jobId, resumeText: reqResumeText, candidateSkills } = req.body;
+
+    if (!jobId) {
+      return res.status(400).json({ message: 'jobId is required' });
+    }
+
+    const job = await Job.findByPk(jobId);
+    if (!job) {
+      return res.status(404).json({ message: 'Job not found' });
+    }
+
+    let resumeText = reqResumeText || '';
+    if (!resumeText && req.user) {
+      const profile = await CandidateProfile.findOne({ where: { userId: req.user.id } });
+      if (profile) {
+        resumeText = [
+          profile.college ? `College: ${profile.college}` : '',
+          profile.cgpa ? `CGPA: ${profile.cgpa}` : '',
+          Array.isArray(profile.certifications) ? `Certifications: ${profile.certifications.join(', ')}` : '',
+          Array.isArray(profile.interestedRoles) ? `Interested Roles: ${profile.interestedRoles.join(', ')}` : '',
+        ].filter(Boolean).join('\n');
+      }
+    }
+
+    if (Array.isArray(candidateSkills) && candidateSkills.length > 0) {
+      resumeText += `\nSkills: ${candidateSkills.join(', ')}`;
+    }
+
+    try {
+      const aiResult = await analyzeResumeMatch(resumeText, job.description, job.skills);
+      return res.json({
+        success: true,
+        source: 'gemini-ai',
+        ...aiResult,
+      });
+    } catch (aiError) {
+      console.warn('Gemini API resume analysis failed, falling back to keyword ATS calculation:', aiError.message);
+      const score = calculateATS(resumeText, job);
+      return res.json({
+        success: true,
+        source: 'keyword-fallback',
+        matchScore: score,
+        strengths: [],
+        gaps: [],
+        summary: 'Basic keyword matching analysis was used.',
+      });
+    }
+  } catch (error) {
+    console.error('Error in checkAtsScore:', error);
+    return res.status(500).json({ message: 'Failed to evaluate ATS score' });
+  }
+};
+
+const getResumeUploadUrl = async (req, res) => {
+  try {
+    const { fileName, contentType } = req.body;
+
+    if (!fileName) {
+      return res.status(400).json({ message: 'fileName is required' });
+    }
+
+    const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+    const uniqueFileName = `${req.user.id}_${Date.now()}_${sanitizedFileName}`;
+
+    const { uploadUrl, filePath } = await generateUploadUrl(uniqueFileName, contentType || 'application/pdf');
+
+    return res.json({ uploadUrl, filePath });
+  } catch (error) {
+    console.error('Error in getResumeUploadUrl:', error);
+    return res.status(500).json({ message: 'Failed to generate resume upload URL' });
+  }
+};
 
 const applyToJob = async (req, res) => {
   try {
@@ -78,12 +156,11 @@ const applyToJob = async (req, res) => {
       : `You applied to ${job.title} at ${companyName}.`;
 
     // Create automatic confirmation notification for candidate
-    await Notification.create({
-      userId: req.user.id,
-      type: 'application_confirmation',
-      message: notifMessage,
-      isRead: false,
-    }).catch((err) => console.error('Error creating application confirmation notification:', err));
+    await createNotification(
+      req.user.id,
+      'application_confirmation',
+      notifMessage
+    ).catch((err) => console.error('Error creating application confirmation notification:', err));
 
 
 
@@ -166,6 +243,8 @@ const deleteApplication = async (req, res) => {
 };
 
 module.exports = {
+  checkAtsScore,
+  getResumeUploadUrl,
   applyToJob,
   getMyApplications,
   getApplicationById,

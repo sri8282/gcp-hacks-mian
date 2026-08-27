@@ -210,58 +210,67 @@ export const ViewApplicantsModal: React.FC<ViewApplicantsModalProps> = ({ job, o
     }
   };
 
-  // Run ATS for Candidate vs Job
-  const handleCheckAts = (app: JobApplication) => {
+  // Run ATS for Candidate vs Job using Gemini AI endpoint with keyword fallback
+  const handleCheckAts = async (app: JobApplication) => {
     setAtsModalApp(app);
     setIsScanningAts(true);
     setAtsResult(null);
 
-    setTimeout(() => {
-      const candidateSkills = app.candidateSkills || [
-        'React',
-        'TypeScript',
-        'Tailwind CSS',
-        'Node.js',
-        'PostgreSQL',
-      ];
+    try {
+      const res = await api.applications.checkAts({
+        jobId: job.id,
+        candidateSkills: app.candidateSkills,
+      });
+
+      let grade = 'Strong Match';
+      const score = res.matchScore;
+      if (score >= 90) grade = 'Exceptional Fit';
+      else if (score >= 75) grade = 'High Potential';
+      else grade = 'Moderate Alignment';
+
+      const candidateSkills = app.candidateSkills || [];
       const jobSkills = job.skills || [];
-
-
       const matched = jobSkills.filter((s) =>
         candidateSkills.some((cs) => cs.toLowerCase().includes(s.toLowerCase()) || s.toLowerCase().includes(cs.toLowerCase()))
       );
       const missing = jobSkills.filter((s) => !matched.includes(s));
 
-      const matchRatio = jobSkills.length > 0 ? matched.length / jobSkills.length : 0;
-      const cgpaBonus = (app.candidateCgpa ?? 8.0) >= job.minCgpa ? 10 : -10;
-      const calculatedScore = Math.min(98, Math.max(55, Math.round(matchRatio * 85 + cgpaBonus)));
-
-      let grade = 'Strong Match';
-      if (calculatedScore >= 90) grade = 'Exceptional Fit';
-      else if (calculatedScore >= 75) grade = 'High Potential';
-      else grade = 'Moderate Alignment';
-
-      const suggestions: string[] = [];
-      if (missing.length > 0) {
-        suggestions.push(`Evaluate candidate's knowledge of ${missing.slice(0, 2).join(' and ')} in technical interview.`);
-      }
-      if ((app.candidateCgpa ?? 8.0) >= job.minCgpa) {
-        suggestions.push(`Academic CGPA of ${app.candidateCgpa?.toFixed(1)} fulfills the required cutoff of ${job.minCgpa.toFixed(1)}.`);
-      } else {
-        suggestions.push(`CGPA is below preferred threshold (${app.candidateCgpa?.toFixed(1)} vs ${job.minCgpa.toFixed(1)}). Review practical project repositories.`);
-      }
-      suggestions.push(`Candidate has demonstrated core proficiencies in ${matched.slice(0, 3).join(', ')}.`);
-
       setAtsResult({
-        score: calculatedScore,
+        score: res.matchScore,
         grade,
         matchedKeywords: matched,
         missingKeywords: missing,
-        suggestions,
+        suggestions: res.summary ? [res.summary] : [],
+        strengths: res.strengths || [],
+        gaps: res.gaps || [],
+        summary: res.summary || '',
+        source: res.source,
       });
+    } catch (err) {
+      console.warn('API checkAts error, using local computation:', err);
+      const candidateSkills = app.candidateSkills || [];
+      const jobSkills = job.skills || [];
+      const matched = jobSkills.filter((s) =>
+        candidateSkills.some((cs) => cs.toLowerCase().includes(s.toLowerCase()) || s.toLowerCase().includes(cs.toLowerCase()))
+      );
+      const missing = jobSkills.filter((s) => !matched.includes(s));
+      const matchRatio = jobSkills.length > 0 ? matched.length / jobSkills.length : 0;
+      const calculatedScore = Math.min(98, Math.max(55, Math.round(matchRatio * 85)));
 
+      setAtsResult({
+        score: calculatedScore,
+        grade: calculatedScore >= 75 ? 'Strong Match' : 'Moderate Alignment',
+        matchedKeywords: matched,
+        missingKeywords: missing,
+        suggestions: ['Evaluated using basic skill matching.'],
+        strengths: [],
+        gaps: [],
+        summary: 'Basic keyword matching analysis was used.',
+        source: 'keyword-fallback',
+      });
+    } finally {
       setIsScanningAts(false);
-    }, 700);
+    }
   };
 
   // Quick Template Selection for Bulk Messaging
@@ -653,14 +662,26 @@ export const ViewApplicantsModal: React.FC<ViewApplicantsModalProps> = ({ job, o
                   {/* Resume and Links Strip */}
                   <div className="mt-3 pt-3 border-t border-neutral-100 dark:border-neutral-800/80 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
                     <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setPreviewResumeApp(app)}
-                        className="text-neutral-700 dark:text-neutral-300 hover:text-emerald-500 flex items-center gap-1.5 cursor-pointer font-semibold"
-                      >
-                        <FileText className="w-3.5 h-3.5 text-emerald-500" />
-                        {app.resumeFileName || 'Resume.pdf'}
-                      </button>
+                      {app.resumeUrl ? (
+                        <a
+                          href={app.resumeUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1.5 cursor-pointer font-semibold"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-emerald-500" />
+                          {app.resumeFileName || 'View Resume'}
+                        </a>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewResumeApp(app)}
+                          className="text-neutral-700 dark:text-neutral-300 hover:text-emerald-500 flex items-center gap-1.5 cursor-pointer font-semibold"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-emerald-500" />
+                          {app.resumeFileName || 'Resume.pdf'}
+                        </button>
+                      )}
 
                       {app.candidateLinkedInUrl && (
                         <a
@@ -1030,6 +1051,63 @@ export const ViewApplicantsModal: React.FC<ViewApplicantsModalProps> = ({ job, o
                       <div>Cutoff: <strong className="text-neutral-800 dark:text-neutral-200">{job.minCgpa.toFixed(1)} CGPA</strong></div>
                     </div>
                   </div>
+
+                  {/* AI Summary Banner */}
+                  {atsResult.summary && (
+                    <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 space-y-1 font-mono">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5" />
+                          AI Resume Alignment Summary
+                        </span>
+                        <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-semibold">
+                          {atsResult.source === 'gemini-ai' ? 'Gemini 1.5 Flash AI' : 'Keyword Fallback'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-neutral-800 dark:text-neutral-200 leading-relaxed font-sans pt-1">
+                        {atsResult.summary}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* AI Strengths & Gaps side-by-side / stacked lists */}
+                  {((atsResult.strengths && atsResult.strengths.length > 0) || (atsResult.gaps && atsResult.gaps.length > 0)) && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-mono text-xs">
+                      {atsResult.strengths && atsResult.strengths.length > 0 && (
+                        <div className="p-4 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-emerald-500/30 space-y-2.5">
+                          <div className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                            Key Strengths ({atsResult.strengths.length})
+                          </div>
+                          <ul className="space-y-1.5 text-neutral-700 dark:text-neutral-300 font-sans text-xs">
+                            {atsResult.strengths.map((item, idx) => (
+                              <li key={idx} className="flex items-start gap-2">
+                                <span className="text-emerald-500 font-bold">•</span>
+                                <span>{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {atsResult.gaps && atsResult.gaps.length > 0 && (
+                        <div className="p-4 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-amber-500/30 space-y-2.5">
+                          <div className="font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
+                            <AlertTriangle className="w-4 h-4 text-amber-500" />
+                            Growth Areas & Gaps ({atsResult.gaps.length})
+                          </div>
+                          <ul className="space-y-1.5 text-neutral-700 dark:text-neutral-300 font-sans text-xs">
+                            {atsResult.gaps.map((item, idx) => (
+                              <li key={idx} className="flex items-start gap-2">
+                                <span className="text-amber-500 font-bold">•</span>
+                                <span>{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Matched Keywords */}
                   <div className="space-y-2">

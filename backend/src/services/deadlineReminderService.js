@@ -1,9 +1,9 @@
-const cron = require('node-cron');
 const dayjs = require('dayjs');
 const utc = require('dayjs/plugin/utc');
 const timezone = require('dayjs/plugin/timezone');
 const { Op } = require('sequelize');
 const { Job, Application, Notification } = require('../models');
+const { createNotification } = require('./notificationService');
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -50,33 +50,22 @@ async function checkDeadlineReminders() {
           });
 
           if (!existingNotification) {
-            await Notification.create({
-              userId: app.candidateId,
-              type: 'deadline_reminder',
-              message,
-              isRead: false,
-            });
+            await createNotification(
+              app.candidateId,
+              'deadline_reminder',
+              message
+            );
           }
         }
       }
     }
   } catch (error) {
     console.error('Error in checkDeadlineReminders:', error);
+    throw error;
   }
 }
 
-/**
- * Starts the daily node-cron schedule.
- */
-function startDeadlineReminders() {
-  // Run once daily at 00:00 IST / UTC
-  cron.schedule('0 0 * * *', () => {
-    console.log('Running daily deadline reminder cron job...');
-    checkDeadlineReminders();
-  });
-}
-
 module.exports = {
-  startDeadlineReminders,
   checkDeadlineReminders,
 };
+

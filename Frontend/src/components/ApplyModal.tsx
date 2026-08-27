@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Job, ApplicationAnswer } from '../types';
+import { api } from '../lib/api';
 import {
   X,
   UploadCloud,
@@ -11,14 +12,15 @@ import {
   ArrowRight,
   Sparkles,
   Paperclip,
-  Check
+  Check,
+  Loader2,
 } from 'lucide-react';
 
 interface ApplyModalProps {
   job: Job | null;
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (job: Job, data: { resumeFileName: string; answers: ApplicationAnswer[] }) => void;
+  onSubmit: (job: Job, data: { resumeFileName: string; answers: ApplicationAnswer[]; resumeUrl?: string }) => void;
   defaultCandidateName?: string;
 }
 
@@ -49,18 +51,49 @@ export const ApplyModal: React.FC<ApplyModalProps> = ({
   const [resumeFileName, setResumeFileName] = useState<string>(
     `${defaultCandidateName.replace(/\s+/g, '_')}_Resume_2026.pdf`
   );
+  const [uploadedFilePath, setUploadedFilePath] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
   const [answers, setAnswers] = useState<string[]>(() =>
     questionsToUse.map(() => '')
   );
   const [isDragging, setIsDragging] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  const uploadFileToGCS = async (file: File) => {
+    setIsUploading(true);
+    setErrorMsg(null);
+    setSelectedFile(file);
+    setResumeFileName(file.name);
+
+    try {
+      const contentType = file.type || 'application/pdf';
+      const { uploadUrl, filePath } = await api.candidate.getResumeUploadUrl(file.name, contentType);
+
+      const uploadRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': contentType,
+        },
+        body: file,
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error(`Upload failed with status ${uploadRes.status}`);
+      }
+
+      setUploadedFilePath(filePath);
+    } catch (err: any) {
+      console.error('Resume upload error:', err);
+      setErrorMsg(err.message || 'Failed to upload resume to Cloud Storage. Please try again.');
+      setUploadedFilePath(null);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setSelectedFile(file);
-      setResumeFileName(file.name);
-      setErrorMsg(null);
+      uploadFileToGCS(e.target.files[0]);
     }
   };
 
@@ -68,10 +101,7 @@ export const ApplyModal: React.FC<ApplyModalProps> = ({
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const file = e.dataTransfer.files[0];
-      setSelectedFile(file);
-      setResumeFileName(file.name);
-      setErrorMsg(null);
+      uploadFileToGCS(e.dataTransfer.files[0]);
     }
   };
 
@@ -84,7 +114,12 @@ export const ApplyModal: React.FC<ApplyModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!resumeFileName.trim()) {
+    if (isUploading) {
+      setErrorMsg('Please wait for resume upload to complete.');
+      return;
+    }
+
+    if (!resumeFileName.trim() && !uploadedFilePath) {
       setErrorMsg('Please select or upload a resume to proceed.');
       return;
     }
@@ -96,6 +131,7 @@ export const ApplyModal: React.FC<ApplyModalProps> = ({
 
     onSubmit(job, {
       resumeFileName: resumeFileName.trim(),
+      resumeUrl: uploadedFilePath || undefined,
       answers: structuredAnswers,
     });
     onClose();
@@ -167,25 +203,38 @@ export const ApplyModal: React.FC<ApplyModalProps> = ({
                 id="resume-upload-input"
                 accept=".pdf,.doc,.docx"
                 onChange={handleFileChange}
+                disabled={isUploading}
                 className="hidden"
               />
 
               <div className="flex flex-col items-center justify-center gap-2">
                 <div className="w-10 h-10 rounded-full bg-neutral-200 dark:bg-neutral-800 flex items-center justify-center text-emerald-500">
-                  <UploadCloud className="w-5 h-5" />
+                  {isUploading ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <UploadCloud className="w-5 h-5" />
+                  )}
                 </div>
 
                 <div className="text-xs font-mono text-neutral-700 dark:text-neutral-300">
-                  <label
-                    htmlFor="resume-upload-input"
-                    className="font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
-                  >
-                    Click to browse
-                  </label>{' '}
-                  or drag and drop your resume file here
+                  {isUploading ? (
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                      Uploading resume to Google Cloud Storage...
+                    </span>
+                  ) : (
+                    <>
+                      <label
+                        htmlFor="resume-upload-input"
+                        className="font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+                      >
+                        Click to browse
+                      </label>{' '}
+                      or drag and drop your resume file here
+                    </>
+                  )}
                 </div>
                 <span className="text-[11px] font-mono text-neutral-400">
-                  Supported formats: PDF, DOC, DOCX (Max 10MB)
+                  Bucket: hirehub-resumes-hrie-506616 (Max 10MB)
                 </span>
               </div>
             </div>
@@ -194,11 +243,19 @@ export const ApplyModal: React.FC<ApplyModalProps> = ({
             {resumeFileName && (
               <div className="mt-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between font-mono text-xs">
                 <div className="flex items-center gap-2.5 text-neutral-900 dark:text-white">
-                  <FileText className="w-4 h-4 text-emerald-500" />
+                  {isUploading ? (
+                    <Loader2 className="w-4 h-4 text-emerald-500 animate-spin" />
+                  ) : (
+                    <FileText className="w-4 h-4 text-emerald-500" />
+                  )}
                   <div>
                     <span className="font-bold block truncate max-w-xs">{resumeFileName}</span>
                     <span className="text-[10px] text-emerald-600 dark:text-emerald-400">
-                      ✓ Ready for submission
+                      {isUploading
+                        ? '⏳ Uploading to Cloud Storage...'
+                        : uploadedFilePath
+                        ? '✓ Uploaded to Google Cloud Storage'
+                        : '✓ Ready for submission'}
                     </span>
                   </div>
                 </div>
@@ -253,10 +310,11 @@ export const ApplyModal: React.FC<ApplyModalProps> = ({
 
             <button
               type="submit"
-              className="px-6 py-2.5 text-xs font-mono font-bold rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black flex items-center gap-2 transition-colors shadow-sm cursor-pointer"
+              disabled={isUploading}
+              className="px-6 py-2.5 text-xs font-mono font-bold rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black flex items-center gap-2 transition-colors shadow-sm cursor-pointer disabled:opacity-50"
             >
-              <Check className="w-4 h-4" />
-              Submit Application
+              {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              {isUploading ? 'Uploading Resume...' : 'Submit Application'}
             </button>
           </div>
         </form>
@@ -264,3 +322,4 @@ export const ApplyModal: React.FC<ApplyModalProps> = ({
     </div>
   );
 };
+

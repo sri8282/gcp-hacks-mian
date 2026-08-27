@@ -93,6 +93,7 @@ export interface JobApplication {
   payRange: string;
   location: string;
   resumeFileName?: string;
+  resumeUrl?: string;
   answers?: ApplicationAnswer[];
   candidateName?: string;
   candidateEmail?: string;

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Job, SeekerProfile } from '../types';
 import { getApplicationWindowStatus, formatToIST, getStatusMessage } from '../utils/istTime';
+import { api } from '../lib/api';
 
 import {
   X,
@@ -55,6 +56,9 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
     matchedSkills: string[];
     missingSkills: string[];
     suggestions: string[];
+    strengths?: string[];
+    gaps?: string[];
+    summary?: string;
   } | null>(null);
 
   // Live timer for IST application window countdown
@@ -120,56 +124,57 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
 
   const resumeFileName = `${(seekerProfile?.fullName || 'Alex_Morgan').replace(/\s+/g, '_')}_Resume_2026.pdf`;
 
-  // Compute realistic ATS Result based on candidate skills vs job skills
-  const handleRunAtsScan = () => {
+  // Compute ATS Result using Gemini AI analysis with keyword fallback
+  const handleRunAtsScan = async () => {
     setIsScanning(true);
-    setScanProgress(0);
+    setScanProgress(30);
     setScanResult(null);
 
-    const interval = setInterval(() => {
-      setScanProgress((prev) => {
-        if (prev >= 85) {
-          clearInterval(interval);
-          return 90;
-        }
-        return prev + 15;
+    const candSkills = seekerProfile?.skills || [];
+    const matched = skills.filter((s) =>
+      candSkills.some((cs) => cs.toLowerCase().includes(s.toLowerCase()) || s.toLowerCase().includes(cs.toLowerCase()))
+    );
+    const missing = skills.filter((s) => !matched.includes(s));
+
+    try {
+      setScanProgress(60);
+      const res = await api.applications.checkAts({
+        jobId: job.id,
+        candidateSkills: candSkills,
       });
-    }, 120);
 
-    setTimeout(() => {
-      clearInterval(interval);
       setScanProgress(100);
-
-      const candSkills = seekerProfile?.skills || [];
-
-      const matched = skills.filter((s) =>
-        candSkills.some((cs) => cs.toLowerCase().includes(s.toLowerCase()) || s.toLowerCase().includes(cs.toLowerCase()))
-      );
-      const missing = skills.filter((s) => !matched.includes(s));
-
+      const finalScore = res.matchScore;
+      setScanResult({
+        score: finalScore,
+        matchGrade: finalScore >= 85 ? 'Exceptional Match' : finalScore >= 75 ? 'Strong Potential' : 'Moderate Alignment',
+        matchedSkills: matched,
+        missingSkills: missing,
+        suggestions: res.summary ? [res.summary] : [],
+        strengths: res.strengths || [],
+        gaps: res.gaps || [],
+        summary: res.summary || '',
+      });
+    } catch (err) {
+      console.warn('API checkAts failed in JobDetailModal, using keyword fallback:', err);
+      setScanProgress(100);
       const matchRatio = skills.length > 0 ? matched.length / skills.length : 0;
       const cgpaBonus = candidateCgpa >= minCgpa ? 8 : -8;
       const finalScore = Math.min(96, Math.max(62, Math.round(matchRatio * 82 + 10 + cgpaBonus)));
-
-      const suggestions = [
-        `Highlight quantified business metrics for ${matched[0] || 'core technologies'} (e.g. "Reduced API latency by 35%").`,
-        missing.length > 0
-          ? `Add keywords related to ${missing.slice(0, 2).join(' and ')} in your project experience bullets to improve recruiter keyword search matches.`
-          : `Ensure your verified CGPA (${candidateCgpa.toFixed(1)}/10.0) is clearly highlighted in the education section.`,
-        `Tailor the introductory summary specifically for ${company}'s focus on ${category} solutions.`,
-      ];
 
       setScanResult({
         score: finalScore,
         matchGrade: finalScore >= 85 ? 'Exceptional Match' : finalScore >= 75 ? 'Strong Potential' : 'Moderate Alignment',
         matchedSkills: matched,
         missingSkills: missing,
-        suggestions,
+        suggestions: ['Evaluated using basic skill matching.'],
+        strengths: [],
+        gaps: [],
+        summary: 'Basic keyword matching analysis was used.',
       });
-
-
+    } finally {
       setIsScanning(false);
-    }, 1100);
+    }
   };
 
   const handleCopyShare = () => {
@@ -636,6 +641,58 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
                       </div>
                     </div>
                   </div>
+
+                  {/* AI Summary Banner */}
+                  {scanResult.summary && (
+                    <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 space-y-1 font-mono text-xs">
+                      <div className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 uppercase text-[11px]">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        AI Executive Summary
+                      </div>
+                      <p className="text-neutral-800 dark:text-neutral-200 font-sans leading-relaxed pt-0.5">
+                        {scanResult.summary}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* AI Strengths & Gaps */}
+                  {((scanResult.strengths && scanResult.strengths.length > 0) || (scanResult.gaps && scanResult.gaps.length > 0)) && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-mono text-xs">
+                      {scanResult.strengths && scanResult.strengths.length > 0 && (
+                        <div className="p-4 rounded-xl bg-white dark:bg-neutral-900/80 border border-emerald-500/30 space-y-2">
+                          <div className="font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1.5 text-[11px]">
+                            <CheckCircle className="w-4 h-4 text-emerald-500" />
+                            Key Strengths
+                          </div>
+                          <ul className="space-y-1.5 text-neutral-700 dark:text-neutral-300 font-sans text-xs">
+                            {scanResult.strengths.map((st, idx) => (
+                              <li key={idx} className="flex items-start gap-2">
+                                <span className="text-emerald-500 font-bold">•</span>
+                                <span>{st}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {scanResult.gaps && scanResult.gaps.length > 0 && (
+                        <div className="p-4 rounded-xl bg-white dark:bg-neutral-900/80 border border-amber-500/30 space-y-2">
+                          <div className="font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1.5 text-[11px]">
+                            <AlertTriangle className="w-4 h-4 text-amber-500" />
+                            Areas for Growth / Gaps
+                          </div>
+                          <ul className="space-y-1.5 text-neutral-700 dark:text-neutral-300 font-sans text-xs">
+                            {scanResult.gaps.map((gp, idx) => (
+                              <li key={idx} className="flex items-start gap-2">
+                                <span className="text-amber-500 font-bold">•</span>
+                                <span>{gp}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Matched vs Missing Skills Grid */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch font-mono">

@@ -62,9 +62,8 @@ interface AuthContextType {
   applications: JobApplication[];
   setApplications: React.Dispatch<React.SetStateAction<JobApplication[]>>;
   addApplication: (
-
     job: Job,
-    applicationData?: { resumeFileName?: string; answers?: ApplicationAnswer[] }
+    applicationData?: { resumeFileName?: string; answers?: ApplicationAnswer[]; resumeUrl?: string }
   ) => { success: boolean; message: string };
   updateApplicationStatus: (id: string, status: ApplicationStatus, backendStatus?: string) => void;
 
@@ -674,7 +673,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addApplication = (
     job: Job,
-    applicationData?: { resumeFileName?: string; answers?: ApplicationAnswer[] }
+    applicationData?: { resumeFileName?: string; answers?: ApplicationAnswer[]; resumeUrl?: string }
   ): { success: boolean; message: string } => {
     const existing = applications.find((a) => a.jobId === job.id);
     if (existing) {
@@ -697,6 +696,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       payRange: job.payRange,
       location: job.location,
       resumeFileName: applicationData?.resumeFileName || `${candidateName.replace(/\s+/g, '_')}_Resume.pdf`,
+      resumeUrl: applicationData?.resumeUrl,
       answers: applicationData?.answers || [],
       candidateName,
       candidateEmail: user?.email || 'candidate@gmail.com',
@@ -714,7 +714,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setApplications((prev) => [newApp, ...prev]);
 
     // Send application to real backend
-    api.jobs.applyToJob(job.id).catch((err) => console.warn('applyToJob API sync warning:', err));
+    api.jobs.applyToJob(job.id, {
+      resumeUrl: applicationData?.resumeUrl || applicationData?.resumeFileName,
+      screeningAnswers: applicationData?.answers,
+    }).catch((err) => console.warn('applyToJob API sync warning:', err));
 
     return { success: true, message: `Successfully applied to ${job.title} at ${job.company}!` };
   };

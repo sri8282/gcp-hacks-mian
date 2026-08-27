@@ -1,5 +1,6 @@
 const { User, Job, Application, CandidateProfile, RecruiterProfile, Notification } = require('../models');
 const { Op } = require('sequelize');
+const { createNotification } = require('../services/notificationService');
 
 const getAllUsers = async (req, res) => {
   try {
@@ -325,12 +326,11 @@ const adminUpdateApplicationStatus = async (req, res) => {
     await application.save();
 
     if (status) {
-      await Notification.create({
-        userId: application.candidateId,
-        type: 'status_update',
-        message: `Your application status for "${application.job ? application.job.title : 'Job'}" has been updated to "${status}".`,
-        isRead: false,
-      }).catch((err) => console.error('Error creating status notification:', err));
+      await createNotification(
+        application.candidateId,
+        'status_update',
+        `Your application status for "${application.job ? application.job.title : 'Job'}" has been updated to "${status}".`
+      ).catch((err) => console.error('Error creating status notification:', err));
     }
 
     return res.json({ application });
@@ -370,12 +370,8 @@ const broadcastNotification = async (req, res) => {
     const senderName = req.user?.name || 'HireHub Admin';
 
     const notifPromises = targetCandidates.map((c) =>
-      Notification.create({
-        userId: c.id,
-        type: 'admin_broadcast',
-        message: fullMessage,
+      createNotification(c.id, 'admin_broadcast', fullMessage, {
         senderName,
-        isRead: false,
       }).catch((err) => console.error(`Error creating notification for candidate ${c.id}:`, err))
     );
 

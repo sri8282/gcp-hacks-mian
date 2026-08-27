@@ -177,10 +177,21 @@ export const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
                             <span>Applied: {app.appliedDate}</span>
                             <span className="font-semibold text-neutral-700 dark:text-neutral-300">{app.payRange}</span>
                           </div>
-                          {app.resumeFileName && (
+                          {(app.resumeUrl || app.resumeFileName) && (
                             <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 truncate">
-                              <FileText className="w-3 h-3 shrink-0" />
-                              <span className="truncate">{app.resumeFileName}</span>
+                              <FileText className="w-3 h-3 shrink-0 text-emerald-500" />
+                              {app.resumeUrl ? (
+                                <a
+                                  href={app.resumeUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="hover:underline truncate font-semibold"
+                                >
+                                  {app.resumeFileName || 'View Resume'}
+                                </a>
+                              ) : (
+                                <span className="truncate">{app.resumeFileName}</span>
+                              )}
                             </div>
                           )}
                         </div>

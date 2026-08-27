@@ -1,7 +1,6 @@
 require('dotenv').config();
 const app = require('./src/app');
 const { sequelize } = require('./src/models');
-const { startDeadlineReminders } = require('./src/services/deadlineReminderService');
 
 const PORT = process.env.PORT || 8080;
 
@@ -11,7 +10,6 @@ async function start() {
     console.log('DB connected');
     await sequelize.sync({ alter: true });
     console.log('Database synced');
-    startDeadlineReminders();
     app.listen(PORT, () => {
       console.log(`Server listening on port ${PORT}`);
     });

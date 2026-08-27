@@ -1,4 +1,5 @@
 const { Application, Job, User, CandidateProfile, Notification } = require('../models');
+const { createNotification } = require('../services/notificationService');
 
 const getApplicantsForJob = async (req, res) => {
   try {
@@ -86,12 +87,11 @@ const updateApplicationStatus = async (req, res) => {
       }
 
       if (notifMessage) {
-        await Notification.create({
-          userId: application.candidateId,
-          type: 'status_update',
-          message: notifMessage,
-          isRead: false,
-        }).catch((err) => console.error('Error creating status update notification:', err));
+        await createNotification(
+          application.candidateId,
+          'status_update',
+          notifMessage
+        ).catch((err) => console.error('Error creating status update notification:', err));
       }
     }
 
@@ -137,16 +137,16 @@ const bulkMessage = async (req, res) => {
     }
 
     const senderName = req.user.companyName || req.user.name || 'Recruiter';
-    const notificationsToCreate = applications.map((app) => ({
-      userId: app.candidateId,
-      type: 'recruiter_message',
-      message: message.trim(),
-      senderName: app.job?.companyName || app.job?.company || senderName,
-      isRead: false,
-    }));
-
-
-    const createdNotifications = await Notification.bulkCreate(notificationsToCreate);
+    const createdNotifications = await Promise.all(
+      applications.map((app) =>
+        createNotification(app.candidateId, 'recruiter_message', message.trim(), {
+          senderName: app.job?.companyName || app.job?.company || senderName,
+        }).catch((err) => {
+          console.error('Error creating bulk notification:', err);
+          return null;
+        })
+      )
+    );
 
     return res.status(201).json({
       message: 'Bulk notifications created successfully',
