@@ -137,17 +137,18 @@ export const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
                         key={app.id}
                         className={`p-3.5 rounded-lg text-left transition-all relative ${
                           isStale
-                            ? 'border-2 border-amber-500 bg-amber-50/60 dark:bg-neutral-900/90'
+                            ? 'border-2 border-amber-500 dark:border-amber-500 bg-amber-100/90 dark:bg-amber-950/60 shadow-xs'
                             : 'border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/60 hover:border-neutral-400 dark:hover:border-neutral-700 shadow-xs'
                         }`}
                       >
                         {/* Stale Alert Banner */}
                         {isStale && (
-                          <div className="flex items-center gap-1 text-[10px] font-mono font-semibold text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded mb-2 border border-amber-500/30">
-                            <AlertTriangle className="w-3 h-3 text-amber-500" />
+                          <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-amber-900 dark:text-amber-300 bg-amber-500/15 dark:bg-amber-500/20 px-2 py-0.5 rounded mb-2 border border-amber-600/30 dark:border-amber-500/40">
+                            <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
                             <span>Stale ({app.daysInactive} days inactive)</span>
                           </div>
                         )}
+
 
                         {/* Card Header: Role and Company */}
                         <div className="mb-2">

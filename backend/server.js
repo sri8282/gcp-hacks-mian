@@ -9,7 +9,7 @@ async function start() {
   try {
     await sequelize.authenticate();
     console.log('DB connected');
-    await sequelize.sync();
+    await sequelize.sync({ alter: true });
     console.log('Database synced');
     startDeadlineReminders();
     app.listen(PORT, () => {
