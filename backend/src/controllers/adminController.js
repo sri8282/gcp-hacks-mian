@@ -1,6 +1,7 @@
 const { User, Job, Application, CandidateProfile, RecruiterProfile, Notification } = require('../models');
 const { Op } = require('sequelize');
 const { createNotification } = require('../services/notificationService');
+const { getRecentLogs, getPlatformHealth } = require('../services/loggingService');
 
 const getAllUsers = async (req, res) => {
   try {
@@ -387,6 +388,24 @@ const broadcastNotification = async (req, res) => {
   }
 };
 
+const getSystemLogs = async (req, res) => {
+  try {
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : 50;
+    const [logs, health] = await Promise.all([
+      getRecentLogs(limit),
+      getPlatformHealth(),
+    ]);
+
+    return res.json({
+      logs,
+      health,
+    });
+  } catch (error) {
+    console.error('Error in getSystemLogs:', error);
+    return res.status(500).json({ message: 'Failed to fetch system logs' });
+  }
+};
+
 module.exports = {
   getAllUsers,
   toggleUserActive,
@@ -399,5 +418,6 @@ module.exports = {
   getApplicantsForJobAdmin,
   adminUpdateApplicationStatus,
   broadcastNotification,
+  getSystemLogs,
 };
 

@@ -43,7 +43,10 @@ import {
   Mail,
   User as UserIcon,
   Send,
-  BellRing
+  BellRing,
+  RotateCw,
+  Terminal,
+  Server
 } from 'lucide-react';
 
 import { Navigate } from 'react-router-dom';
@@ -79,11 +82,54 @@ export const AdminDashboard: React.FC = () => {
   }
 
   
-  // Navigation Tabs: 'overview' | 'jobs' | 'seekers' | 'recruiters' | 'moderation' | 'create-account'
+  // Navigation Tabs: 'overview' | 'jobs' | 'seekers' | 'recruiters' | 'moderation' | 'create-account' | 'system-logs'
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'jobs' | 'seekers' | 'recruiters' | 'moderation' | 'create-account'
+    'overview' | 'jobs' | 'seekers' | 'recruiters' | 'moderation' | 'create-account' | 'system-logs'
   >('overview');
   const [nowMs, setNowMs] = useState(Date.now());
+
+  // System Logs State
+  const [logsData, setLogsData] = useState<Array<{
+    timestamp: string;
+    severity: string;
+    service: string;
+    message: string;
+  }>>([]);
+  const [healthData, setHealthData] = useState<{
+    errorCount: number;
+    lastErrorTimestamp: string | null;
+  } | null>(null);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  const [logsError, setLogsError] = useState<string | null>(null);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
+
+  const fetchSystemLogsData = async (showLoadingState = false) => {
+    if (showLoadingState) setIsLoadingLogs(true);
+    try {
+      setLogsError(null);
+      const res = await api.admin.getSystemLogs();
+      setLogsData(res.logs || []);
+      setHealthData(res.health || { errorCount: 0, lastErrorTimestamp: null });
+      setLastRefreshedAt(new Date().toLocaleTimeString());
+    } catch (err: any) {
+      console.warn('Failed to fetch system logs:', err);
+      setLogsError(err.message || 'Failed to fetch system logs from Cloud Logging');
+    } finally {
+      if (showLoadingState) setIsLoadingLogs(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'system-logs') return;
+
+    fetchSystemLogsData(true);
+
+    const interval = setInterval(() => {
+      fetchSystemLogsData(false);
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [activeTab]);
 
   // Platform Stats State
   const [platformStats, setPlatformStats] = useState<{
@@ -782,7 +828,7 @@ export const AdminDashboard: React.FC = () => {
         {/* ========================================================================= */}
         {/* SUB-NAV / TABS */}
         {/* ========================================================================= */}
-        <div className="flex items-center gap-2 border-b border-neutral-200 dark:border-neutral-800 overflow-x-auto pb-px">
+        <div className="flex flex-wrap items-center gap-2 border-b border-neutral-200 dark:border-neutral-800 pb-2.5">
           <button
             type="button"
             onClick={() => setActiveTab('overview')}
@@ -874,6 +920,23 @@ export const AdminDashboard: React.FC = () => {
             <span>Create Account</span>
             <span className="px-1.5 py-0.2 rounded text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20">
               Admin Only
+            </span>
+          </button>
+
+          {/* New System Logs Tab */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('system-logs')}
+            className={`px-4 py-2.5 text-xs font-mono font-semibold transition-all border-b-2 cursor-pointer flex items-center gap-2 shrink-0 ${
+              activeTab === 'system-logs'
+                ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-neutral-100/60 dark:bg-neutral-900/60 rounded-t-lg'
+                : 'border-transparent text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+            }`}
+          >
+            <Terminal className="w-3.5 h-3.5 text-blue-500" />
+            <span>System Logs</span>
+            <span className="px-1.5 py-0.2 rounded text-[10px] bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold border border-blue-500/20">
+              GCP Live
             </span>
           </button>
         </div>
@@ -2407,6 +2470,180 @@ export const AdminDashboard: React.FC = () => {
 
             </div>
 
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 7: REAL-TIME GCP CLOUD LOGGING DASHBOARD */}
+        {/* ========================================================================= */}
+        {activeTab === 'system-logs' && (
+          <div className="space-y-6 text-left font-mono">
+            {/* Top Toolbar & Info Banner */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-2xl bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Terminal className="w-4 h-4 text-emerald-500" />
+                  <h2 className="text-sm font-bold text-neutral-900 dark:text-white uppercase tracking-wider">
+                    GCP Cloud Logging — Real-Time Stream
+                  </h2>
+                </div>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  Project: <strong className="text-neutral-700 dark:text-neutral-300">hrie-506616</strong> • Services: <span className="text-purple-400 font-bold">hirehub-backend</span>, <span className="text-blue-400 font-bold">hirehub-frontend</span> (Auto-polling every 10s)
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                {lastRefreshedAt && (
+                  <span className="text-[11px] text-neutral-500">
+                    Last updated: <strong className="text-neutral-700 dark:text-neutral-300">{lastRefreshedAt}</strong>
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => fetchSystemLogsData(true)}
+                  disabled={isLoadingLogs}
+                  className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-mono font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <RotateCw className={`w-3.5 h-3.5 ${isLoadingLogs ? 'animate-spin' : ''}`} />
+                  <span>{isLoadingLogs ? 'Refreshing...' : 'Refresh Now'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Health Summary Card */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Error Health Indicator */}
+              <div className={`p-4 rounded-xl border font-mono flex items-start gap-3.5 ${
+                (healthData?.errorCount || 0) > 0
+                  ? 'bg-red-500/10 border-red-500/30 text-red-500'
+                  : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+              }`}>
+                {(healthData?.errorCount || 0) > 0 ? (
+                  <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                ) : (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+                )}
+                <div className="space-y-1">
+                  <div className="text-xs font-bold uppercase tracking-wider">
+                    Platform Health Status (Last 1 Hour)
+                  </div>
+                  <div className="text-lg font-extrabold">
+                    {(healthData?.errorCount || 0) > 0
+                      ? `${healthData?.errorCount} ERROR(s) Detected in Last Hour`
+                      : '0 Errors in Last Hour — Systems Operational'}
+                  </div>
+                  {healthData?.lastErrorTimestamp && (
+                    <div className="text-[11px] opacity-80">
+                      Most Recent Error: {formatToIST(healthData.lastErrorTimestamp)}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Total Logs Card */}
+              <div className="p-4 rounded-xl bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 space-y-1">
+                <div className="text-xs font-bold text-neutral-500 uppercase tracking-wider flex items-center justify-between">
+                  <span>Fetched Log Entries</span>
+                  <Server className="w-4 h-4 text-blue-500" />
+                </div>
+                <div className="text-2xl font-extrabold text-neutral-900 dark:text-white">
+                  {logsData.length} Logs
+                </div>
+                <div className="text-[11px] text-neutral-500">
+                  Cloud Run Revision filter active
+                </div>
+              </div>
+
+              {/* Polling Status Card */}
+              <div className="p-4 rounded-xl bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 space-y-1">
+                <div className="text-xs font-bold text-neutral-500 uppercase tracking-wider flex items-center justify-between">
+                  <span>Live Stream Mode</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                </div>
+                <div className="text-2xl font-extrabold text-neutral-900 dark:text-white">
+                  10s Auto-Poll
+                </div>
+                <div className="text-[11px] text-neutral-500">
+                  Active while tab is open
+                </div>
+              </div>
+            </div>
+
+            {/* Error banner if fetch failed */}
+            {logsError && (
+              <div className="p-3.5 bg-red-500/10 border border-red-500/20 rounded-xl text-red-500 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{logsError}</span>
+              </div>
+            )}
+
+            {/* Scrollable Log Stream List */}
+            <div className="p-5 rounded-2xl bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-neutral-200 dark:border-neutral-800 text-xs font-bold text-neutral-700 dark:text-neutral-300">
+                <span>REVISION LOG ENTRIES (MOST RECENT FIRST)</span>
+                <span>COUNT: {logsData.length}</span>
+              </div>
+
+              {logsData.length === 0 ? (
+                <div className="p-8 text-center text-xs text-neutral-500 space-y-2">
+                  {isLoadingLogs ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <RotateCw className="w-4 h-4 animate-spin text-emerald-500" />
+                      <span>Loading real-time Cloud Logging stream...</span>
+                    </div>
+                  ) : (
+                    <span>No log entries received for the specified Cloud Run services.</span>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
+                  {logsData.map((log, index) => {
+                    const isError = ['ERROR', 'CRITICAL', 'ALERT', 'EMERGENCY'].includes(log.severity?.toUpperCase());
+                    const isWarning = ['WARNING', 'WARN'].includes(log.severity?.toUpperCase());
+                    const serviceColor = log.service === 'hirehub-backend'
+                      ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20'
+                      : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20';
+
+                    const severityBadgeClass = isError
+                      ? 'bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/30 font-bold'
+                      : isWarning
+                      ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/30 font-bold'
+                      : 'bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700';
+
+                    return (
+                      <div
+                        key={`${log.timestamp}-${index}`}
+                        className="p-3.5 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 space-y-2 text-xs hover:border-neutral-300 dark:hover:border-neutral-700 transition-colors"
+                      >
+                        <div className="flex items-center justify-between flex-wrap gap-2 text-[11px]">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {/* Severity Badge */}
+                            <span className={`px-2 py-0.5 rounded border text-[10px] uppercase font-mono tracking-wider ${severityBadgeClass}`}>
+                              {log.severity || 'DEFAULT'}
+                            </span>
+
+                            {/* Service Badge */}
+                            <span className={`px-2 py-0.5 rounded border text-[10px] font-mono ${serviceColor}`}>
+                              {log.service}
+                            </span>
+                          </div>
+
+                          {/* Formatted Timestamp */}
+                          <span className="text-[10px] text-neutral-500 font-mono">
+                            {formatToIST(log.timestamp)}
+                          </span>
+                        </div>
+
+                        {/* Log Message */}
+                        <div className="text-neutral-800 dark:text-neutral-200 font-mono leading-relaxed whitespace-pre-wrap break-words text-[11.5px] bg-neutral-50 dark:bg-neutral-950 p-2.5 rounded-lg border border-neutral-200/60 dark:border-neutral-800/60">
+                          {log.message}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         )}
 

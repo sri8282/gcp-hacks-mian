@@ -643,6 +643,21 @@ export const api = {
         body: JSON.stringify(data),
       });
     },
+
+    async getSystemLogs(limit: number = 50) {
+      return apiRequest<{
+        logs: Array<{
+          timestamp: string;
+          severity: string;
+          service: string;
+          message: string;
+        }>;
+        health: {
+          errorCount: number;
+          lastErrorTimestamp: string | null;
+        };
+      }>(`/admin/logs?limit=${limit}`, { method: 'GET' });
+    },
   },
 
 

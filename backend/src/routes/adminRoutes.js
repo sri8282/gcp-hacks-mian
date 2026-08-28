@@ -12,6 +12,7 @@ const {
   getApplicantsForJobAdmin,
   adminUpdateApplicationStatus,
   broadcastNotification,
+  getSystemLogs,
 } = require('../controllers/adminController');
 const { verifyToken, requireRole } = require('../middleware/auth');
 
@@ -31,6 +32,7 @@ router.patch('/applications/:id/status', adminUpdateApplicationStatus);
 
 router.get('/stats', getPlatformStats);
 router.post('/broadcast', broadcastNotification);
+router.get('/logs', getSystemLogs);
 
 module.exports = router;
 
