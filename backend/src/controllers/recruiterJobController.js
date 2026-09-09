@@ -1,4 +1,4 @@
-const { Job, CandidateProfile, Notification } = require('../models');
+const { Job, CandidateProfile, Notification, User } = require('../models');
 const { createNotification } = require('../services/notificationService');
 
 const createJob = async (req, res) => {
@@ -48,40 +48,44 @@ const createJob = async (req, res) => {
       adminOverrideClosed: false,
     });
 
-    // Asynchronously notify eligible candidates whose CGPA meets minCGPA & interestedRoles overlap job.skills
+    // Asynchronously send email notification to ALL registered candidate users in background
     (async () => {
       try {
-        const candidateProfiles = await CandidateProfile.findAll();
-        const jobSkills = (job.skills || []).map((s) => (s || '').toString().toLowerCase());
-
-        const matchingProfiles = candidateProfiles.filter((profile) => {
-          if (job.minCGPA !== null && job.minCGPA !== undefined) {
-            if (profile.cgpa === null || profile.cgpa === undefined || Number(profile.cgpa) < Number(job.minCGPA)) {
-              return false;
-            }
-          }
-
-          const interested = (profile.interestedRoles || []).map((r) => (r || '').toString().toLowerCase());
-          if (jobSkills.length === 0 || interested.length === 0) {
-            return false;
-          }
-
-          return jobSkills.some((skill) =>
-            interested.some((role) => role.includes(skill) || skill.includes(role))
-          );
+        const candidates = await User.findAll({
+          where: { role: 'candidate', isActive: true },
+          attributes: ['id', 'email', 'name'],
         });
 
+        const companyStr = job.companyName || 'HireHub';
+        const skillsStr = Array.isArray(job.skills) && job.skills.length > 0 ? job.skills.join(', ') : 'N/A';
+        const salaryStr = job.salaryLPA ? `${job.salaryLPA} LPA` : 'Not specified';
+        const locationStr = job.location ? `${job.location} (${job.workplaceType || 'Remote'})` : (job.workplaceType || 'N/A');
+
+        const subject = `New Job Opening: ${job.title} at ${companyStr}`;
+        const messageBody =
+          `A new job opportunity has just been posted on HireHub!\n\n` +
+          `• Job Title: ${job.title}\n` +
+          `• Company: ${companyStr}\n` +
+          `• Location: ${locationStr}\n` +
+          `• Salary / Package: ${salaryStr}\n` +
+          `• Required Skills: ${skillsStr}\n\n` +
+          `Log in to your HireHub candidate dashboard to view full details and submit your application.`;
+
         await Promise.all(
-          matchingProfiles.map((profile) =>
+          candidates.map((cand) =>
             createNotification(
-              profile.userId,
+              cand.id,
               'new_eligible_job',
-              `New job opportunity: "${job.title}" at ${job.companyName || 'a company'} matches your profile.`
-            ).catch((err) => console.error(`Error sending new job notification to user ${profile.userId}:`, err))
+              messageBody,
+              {
+                subject,
+                title: subject,
+              }
+            ).catch((err) => console.error(`Error sending job post auto-email to candidate ${cand.id}:`, err))
           )
         );
       } catch (err) {
-        console.error('Error dispatching new job notifications:', err);
+        console.error('Error dispatching job creation candidate auto-emails:', err);
       }
     })();
 

@@ -215,38 +215,44 @@ export const AdminDashboard: React.FC = () => {
 
         const candidateUsers: AdminSeekerUser[] = usersRes
           .filter((u: any) => u.role === 'candidate')
-          .map((u: any) => ({
-            id: u.id,
-            name: u.name,
-            email: u.email,
-            college: u.CandidateProfile?.college || 'Verified University',
-            cgpa: u.CandidateProfile?.cgpa ? Number(u.CandidateProfile.cgpa) : 8.0,
-            passingYear: u.CandidateProfile?.passingYear ? String(u.CandidateProfile.passingYear) : '2025',
-            interestedRoles: u.CandidateProfile?.interestedRoles || [],
-            skills: u.CandidateProfile?.skills || [],
-            certifications: u.CandidateProfile?.certifications || [],
-            linkedInUrl: u.CandidateProfile?.linkedinUrl || 'https://linkedin.com',
-            portfolioUrl: u.CandidateProfile?.portfolioUrl || 'https://github.com',
-            resumeUrl: u.CandidateProfile?.resumeUrl || '',
-            joinedDate: u.createdAt ? new Date(u.createdAt).toLocaleDateString() : new Date().toLocaleDateString(),
-            isDeactivated: !u.isActive,
-          }));
+          .map((u: any) => {
+            const profile = u.candidateProfile || u.CandidateProfile;
+            return {
+              id: u.id,
+              name: u.name,
+              email: u.email,
+              college: profile?.college || 'Verified University',
+              cgpa: profile?.cgpa ? Number(profile.cgpa) : 8.0,
+              passingYear: profile?.passingYear ? String(profile.passingYear) : '2025',
+              interestedRoles: profile?.interestedRoles || [],
+              skills: profile?.skills || [],
+              certifications: profile?.certifications || [],
+              linkedInUrl: profile?.linkedinUrl || 'https://linkedin.com',
+              portfolioUrl: profile?.portfolioUrl || 'https://github.com',
+              resumeUrl: profile?.resumeUrl || '',
+              joinedDate: u.createdAt ? new Date(u.createdAt).toLocaleDateString() : new Date().toLocaleDateString(),
+              isDeactivated: !u.isActive,
+            };
+          });
 
         const recruiterUsers: AdminRecruiterUser[] = usersRes
           .filter((u: any) => u.role === 'recruiter')
-          .map((u: any) => ({
-            id: u.id,
-            name: u.name,
-            email: u.email,
-            company: u.RecruiterProfile?.companyName || `${u.name}'s Hiring Group`,
-            companyInitials: (u.name || 'RC').slice(0, 2).toUpperCase(),
-            companyColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-            category: 'Technology',
-            location: 'Remote',
-            joinedDate: new Date(u.createdAt).toLocaleDateString(),
-            tier: 'Enterprise',
-            isDeactivated: !u.isActive,
-          }));
+          .map((u: any) => {
+            const profile = u.recruiterProfile || u.RecruiterProfile;
+            return {
+              id: u.id,
+              name: u.name,
+              email: u.email,
+              company: profile?.companyName || `${u.name}'s Hiring Group`,
+              companyInitials: (u.name || 'RC').slice(0, 2).toUpperCase(),
+              companyColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+              category: 'Technology',
+              location: 'Remote',
+              joinedDate: u.createdAt ? new Date(u.createdAt).toLocaleDateString() : new Date().toLocaleDateString(),
+              tier: 'Enterprise',
+              isDeactivated: !u.isActive,
+            };
+          });
 
         setSeekers(candidateUsers);
         setRecruiters(recruiterUsers);
@@ -286,39 +292,44 @@ export const AdminDashboard: React.FC = () => {
 
           const candidateUsers: AdminSeekerUser[] = usersRes
             .filter((u: any) => u.role === 'candidate')
-            .map((u: any) => ({
-              id: u.id,
-              name: u.name,
-              email: u.email,
-              college: u.CandidateProfile?.college || 'Verified University',
-              cgpa: u.CandidateProfile?.cgpa ? Number(u.CandidateProfile.cgpa) : 8.0,
-              passingYear: u.CandidateProfile?.passingYear ? String(u.CandidateProfile.passingYear) : '2025',
-              interestedRoles: u.CandidateProfile?.interestedRoles || [],
-              skills: u.CandidateProfile?.skills || [],
-
-              certifications: u.CandidateProfile?.certifications || [],
-              linkedInUrl: u.CandidateProfile?.linkedinUrl || 'https://linkedin.com',
-              portfolioUrl: u.CandidateProfile?.portfolioUrl || 'https://github.com',
-              resumeUrl: u.CandidateProfile?.resumeUrl || '',
-              joinedDate: u.createdAt ? new Date(u.createdAt).toLocaleDateString() : new Date().toLocaleDateString(),
-              isDeactivated: !u.isActive,
-            }));
+            .map((u: any) => {
+              const profile = u.candidateProfile || u.CandidateProfile;
+              return {
+                id: u.id,
+                name: u.name,
+                email: u.email,
+                college: profile?.college || 'Verified University',
+                cgpa: profile?.cgpa ? Number(profile.cgpa) : 8.0,
+                passingYear: profile?.passingYear ? String(profile.passingYear) : '2025',
+                interestedRoles: profile?.interestedRoles || [],
+                skills: profile?.skills || [],
+                certifications: profile?.certifications || [],
+                linkedInUrl: profile?.linkedinUrl || 'https://linkedin.com',
+                portfolioUrl: profile?.portfolioUrl || 'https://github.com',
+                resumeUrl: profile?.resumeUrl || '',
+                joinedDate: u.createdAt ? new Date(u.createdAt).toLocaleDateString() : new Date().toLocaleDateString(),
+                isDeactivated: !u.isActive,
+              };
+            });
 
           const recruiterUsers: AdminRecruiterUser[] = usersRes
             .filter((u: any) => u.role === 'recruiter')
-            .map((u: any) => ({
-              id: u.id,
-              name: u.name,
-              email: u.email,
-              company: u.RecruiterProfile?.companyName || `${u.name}'s Hiring Group`,
-              companyInitials: (u.name || 'RC').slice(0, 2).toUpperCase(),
-              companyColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-              category: 'Technology',
-              location: 'Remote',
-              joinedDate: new Date(u.createdAt).toLocaleDateString(),
-              tier: 'Enterprise',
-              isDeactivated: !u.isActive,
-            }));
+            .map((u: any) => {
+              const profile = u.recruiterProfile || u.RecruiterProfile;
+              return {
+                id: u.id,
+                name: u.name,
+                email: u.email,
+                company: profile?.companyName || `${u.name}'s Hiring Group`,
+                companyInitials: (u.name || 'RC').slice(0, 2).toUpperCase(),
+                companyColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+                category: 'Technology',
+                location: 'Remote',
+                joinedDate: u.createdAt ? new Date(u.createdAt).toLocaleDateString() : new Date().toLocaleDateString(),
+                tier: 'Enterprise',
+                isDeactivated: !u.isActive,
+              };
+            });
 
           setSeekers(candidateUsers);
           setRecruiters(recruiterUsers);
@@ -583,13 +594,15 @@ export const AdminDashboard: React.FC = () => {
 
   // Filtered Seekers
   const filteredSeekers = useMemo(() => {
+    const term = seekerSearch.trim().toLowerCase();
     return seekers.filter((seeker) => {
       const matchSearch =
-        seeker.name.toLowerCase().includes(seekerSearch.toLowerCase()) ||
-        seeker.college.toLowerCase().includes(seekerSearch.toLowerCase()) ||
-        seeker.email.toLowerCase().includes(seekerSearch.toLowerCase()) ||
-        seeker.skills.some((sk) => sk.toLowerCase().includes(seekerSearch.toLowerCase())) ||
-        seeker.interestedRoles.some((r) => r.toLowerCase().includes(seekerSearch.toLowerCase()));
+        !term ||
+        (seeker.name || '').toLowerCase().includes(term) ||
+        (seeker.college || '').toLowerCase().includes(term) ||
+        (seeker.email || '').toLowerCase().includes(term) ||
+        (seeker.skills || []).some((sk) => (sk || '').toLowerCase().includes(term)) ||
+        (seeker.interestedRoles || []).some((r) => (r || '').toLowerCase().includes(term));
 
       const matchStatus =
         seekerStatusFilter === 'all'
@@ -607,13 +620,15 @@ export const AdminDashboard: React.FC = () => {
 
   // Filtered Recruiters
   const filteredRecruiters = useMemo(() => {
+    const term = recruiterSearch.trim().toLowerCase();
     return recruiters.filter((recruiter) => {
       const matchSearch =
-        recruiter.name.toLowerCase().includes(recruiterSearch.toLowerCase()) ||
-        recruiter.company.toLowerCase().includes(recruiterSearch.toLowerCase()) ||
-        recruiter.email.toLowerCase().includes(recruiterSearch.toLowerCase()) ||
-        recruiter.category.toLowerCase().includes(recruiterSearch.toLowerCase()) ||
-        recruiter.location.toLowerCase().includes(recruiterSearch.toLowerCase());
+        !term ||
+        (recruiter.name || '').toLowerCase().includes(term) ||
+        (recruiter.company || '').toLowerCase().includes(term) ||
+        (recruiter.email || '').toLowerCase().includes(term) ||
+        (recruiter.category || '').toLowerCase().includes(term) ||
+        (recruiter.location || '').toLowerCase().includes(term);
 
       const matchStatus =
         recruiterStatusFilter === 'all'

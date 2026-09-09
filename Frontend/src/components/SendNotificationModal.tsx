@@ -104,14 +104,14 @@ export const SendNotificationModal: React.FC<SendNotificationModalProps> = ({
 
   // Filter candidates based on search
   const filteredCandidates = useMemo(() => {
-    if (!searchTerm.trim()) return availableCandidates;
-    const term = searchTerm.toLowerCase();
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) return availableCandidates;
     return availableCandidates.filter(
       (c) =>
-        c.name.toLowerCase().includes(term) ||
-        c.email.toLowerCase().includes(term) ||
-        (c.college && c.college.toLowerCase().includes(term)) ||
-        (c.roleApplied && c.roleApplied.toLowerCase().includes(term))
+        (c.name || '').toLowerCase().includes(term) ||
+        (c.email || '').toLowerCase().includes(term) ||
+        (c.college || '').toLowerCase().includes(term) ||
+        (c.roleApplied || '').toLowerCase().includes(term)
     );
   }, [availableCandidates, searchTerm]);
 

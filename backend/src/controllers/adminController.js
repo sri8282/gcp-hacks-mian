@@ -5,16 +5,30 @@ const { getRecentLogs, getPlatformHealth } = require('../services/loggingService
 
 const getAllUsers = async (req, res) => {
   try {
-    const { role } = req.query;
+    const { role, search, query, q } = req.query;
+    const searchTerm = (search || query || q || '').trim();
     const whereClause = {};
 
     if (role && ['candidate', 'recruiter', 'admin'].includes(role)) {
       whereClause.role = role;
     }
 
+    if (searchTerm) {
+      whereClause[Op.or] = [
+        { name: { [Op.iLike]: `%${searchTerm}%` } },
+        { email: { [Op.iLike]: `%${searchTerm}%` } },
+        { '$candidateProfile.college$': { [Op.iLike]: `%${searchTerm}%` } },
+        { '$recruiterProfile.companyName$': { [Op.iLike]: `%${searchTerm}%` } },
+      ];
+    }
+
     const users = await User.findAll({
       where: whereClause,
       attributes: { exclude: ['passwordHash'] },
+      include: [
+        { model: CandidateProfile, as: 'candidateProfile' },
+        { model: RecruiterProfile, as: 'recruiterProfile' },
+      ],
       order: [['createdAt', 'DESC']],
     });
 

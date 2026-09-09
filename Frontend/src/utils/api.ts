@@ -132,23 +132,52 @@ export const api = {
   // Get selectable candidates for notifications
   async getCandidates(company?: string): Promise<TargetCandidateOption[]> {
     try {
-      const apps = await centralizedApi.applications.getRecruiterApplications().catch(() => []);
       const map = new Map<string, TargetCandidateOption>();
-      (apps || []).forEach((app: any) => {
-        const email = app.Candidate?.User?.email || app.candidateEmail;
-        const name = app.Candidate?.User?.name || app.candidateName || 'Candidate';
-        if (email && !map.has(email)) {
-          map.set(email, {
-            id: app.candidate_id || app.Candidate?.id || email,
-            name,
-            email,
-            college: app.Candidate?.college_name || 'Verified Institution',
-            cgpa: app.Candidate?.cgpa || 8.0,
-            roleApplied: app.Job?.title || 'Engineer',
-            companyApplied: app.Job?.company || company || 'TechCorp',
-          });
-        }
-      });
+
+      // 1. Fetch registered candidates from admin users API
+      try {
+        const users = await centralizedApi.admin.getUsers('candidate').catch(() => []);
+        (users || []).forEach((u: any) => {
+          const email = u.email;
+          if (email && !map.has(email)) {
+            const profile = u.candidateProfile || u.CandidateProfile;
+            map.set(email, {
+              id: u.id,
+              name: u.name || 'Candidate',
+              email,
+              college: profile?.college || 'Verified Candidate',
+              cgpa: profile?.cgpa ? Number(profile.cgpa) : 8.0,
+              roleApplied: 'Registered Candidate',
+              companyApplied: company || 'HireHub',
+            });
+          }
+        });
+      } catch {
+        // ignore
+      }
+
+      // 2. Fetch candidates from recruiter applications
+      try {
+        const apps = await centralizedApi.applications.getRecruiterApplications().catch(() => []);
+        (apps || []).forEach((app: any) => {
+          const email = app.Candidate?.User?.email || app.candidateEmail;
+          const name = app.Candidate?.User?.name || app.candidateName || 'Candidate';
+          if (email && !map.has(email)) {
+            map.set(email, {
+              id: app.candidate_id || app.Candidate?.id || email,
+              name,
+              email,
+              college: app.Candidate?.college_name || app.Candidate?.college || 'Verified Institution',
+              cgpa: app.Candidate?.cgpa || 8.0,
+              roleApplied: app.Job?.title || 'Engineer',
+              companyApplied: app.Job?.company || company || 'TechCorp',
+            });
+          }
+        });
+      } catch {
+        // ignore
+      }
+
       return Array.from(map.values());
     } catch (err) {
       console.warn('getCandidates error:', err);
