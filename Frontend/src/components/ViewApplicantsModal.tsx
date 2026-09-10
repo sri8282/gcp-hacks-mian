@@ -44,6 +44,7 @@ interface AtsResult {
 
 export const ViewApplicantsModal: React.FC<ViewApplicantsModalProps> = ({ job, onClose }) => {
   const {
+    user,
     applications,
     setApplications,
     updateApplicationStatus,

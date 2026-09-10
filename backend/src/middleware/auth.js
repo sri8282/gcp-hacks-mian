@@ -23,15 +23,9 @@ const requireRole = (...roles) => {
     if (!req.user) {
       return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
     }
-    const roleMap = {
-      seeker: 'candidate',
-      candidate: 'candidate',
-      recruiter: 'recruiter',
-      admin: 'admin',
-    };
-    const userRole = roleMap[req.user.role] || req.user.role;
-    const allowedRoles = roles.map((r) => roleMap[r] || r);
-    if (!allowedRoles.includes(userRole) && !roles.includes(req.user.role)) {
+    const userRole = (req.user.role === 'seeker' || req.user.role === 'candidate') ? 'candidate' : req.user.role;
+    const allowed = roles.some((r) => r === userRole || (r === 'candidate' && userRole === 'candidate') || (r === 'seeker' && userRole === 'candidate'));
+    if (!allowed) {
       return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
     }
     next();

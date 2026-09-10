@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { Job, SeekerProfile } from '../types';
 import { getApplicationWindowStatus, formatToIST, getStatusMessage } from '../utils/istTime';
 import { api } from '../lib/api';
@@ -45,6 +46,7 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
   applicationStatus,
   onApply,
 }) => {
+  const { user } = useAuth();
   const [nowMs, setNowMs] = useState(Date.now());
   const [activeTab, setActiveTab] = useState<'overview' | 'ats_checker'>('overview');
   const [copiedLink, setCopiedLink] = useState(false);
@@ -93,6 +95,41 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
     }
   }, [isOpen, job?.id]);
 
+  const extractTextFromFile = async (file: File): Promise<string> => {
+    if (file.type.includes('text') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
+      return await file.text();
+    }
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const decoder = new TextDecoder('latin1');
+      const rawText = decoder.decode(buffer);
+
+      // 1. Extract text in PDF parenthesis operators (text)
+      const matches = rawText.match(/\((.*?)\)/g) || [];
+      let extracted = matches
+        .map((m) => m.slice(1, -1).replace(/\\([()\\])/g, '$1').trim())
+        .filter((s) => s.length > 0 && !s.startsWith('/') && !s.startsWith('Identity') && !s.includes('Obj'))
+        .join(' ');
+
+      // 2. Fallback: Extract uncompressed word tokens
+      if (extracted.trim().length < 20) {
+        const words = rawText.match(/[a-zA-Z0-9+#.-]{2,}/g) || [];
+        const pdfKeywords = new Set([
+          'obj', 'endobj', 'stream', 'endstream', 'Filter', 'FlateDecode', 'Length',
+          'Catalog', 'Pages', 'Page', 'Type', 'Font', 'Encoding', 'MediaBox', 'Contents',
+          'Resources', 'ProcSet', 'FontDescriptor', 'Widths'
+        ]);
+        extracted = words.filter((w) => !pdfKeywords.has(w)).join(' ');
+      }
+
+      return extracted.trim();
+    } catch (err) {
+      console.warn('Text extraction error:', err);
+      return '';
+    }
+  };
+
   const handleUploadAtsResumeToGCS = async (file: File) => {
     setIsUploadingResume(true);
     setUploadError(null);
@@ -100,11 +137,13 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
     setScanResult(null);
 
     try {
-      if (file.type.includes('text') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
-        const textContent = await file.text();
-        setUploadedResumeText(textContent);
+      const extractedText = await extractTextFromFile(file);
+      console.log(`Extracted resume text: ${extractedText.length} characters`);
+
+      if (!extractedText || extractedText.length < 10) {
+        setUploadError("Couldn't read text from this file — try re-saving it as a standard PDF or text document and re-uploading.");
       } else {
-        setUploadedResumeText(`Uploaded Resume File: ${file.name}\nFile type: ${file.type}`);
+        setUploadedResumeText(extractedText);
       }
 
       const contentType = file.type || 'application/pdf';
@@ -679,6 +718,7 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
                       if (e.target.files && e.target.files[0]) {
                         handleUploadAtsResumeToGCS(e.target.files[0]);
                       }
+                      e.target.value = '';
                     }}
                     disabled={isUploadingResume}
                     className="hidden"
