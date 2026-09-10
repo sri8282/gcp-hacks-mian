@@ -548,7 +548,8 @@ export const SeekerDashboard: React.FC = () => {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {filteredJobs.map((job) => {
-                  const isEligible = candidateCgpa !== undefined && candidateCgpa !== null ? candidateCgpa >= (job.minCgpa ?? 0) : true;
+                  const jobMinCgpa = (job.minCgpa !== undefined && job.minCgpa !== null && Number(job.minCgpa) > 0) ? Number(job.minCgpa) : 6.5;
+                  const isEligible = candidateCgpa !== undefined && candidateCgpa !== null ? candidateCgpa >= jobMinCgpa : true;
                   const isRecommended = interestedRoles.some(
                     (role) =>
                       (job.category || '').toLowerCase().includes((role || '').toLowerCase()) ||
@@ -663,12 +664,12 @@ export const SeekerDashboard: React.FC = () => {
                           {isEligible ? (
                             <span className="inline-flex items-center gap-1 text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-medium">
                               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                              <span>Eligible (CGPA {(job.minCgpa ?? 0).toFixed(1)}+)</span>
+                              <span>Eligible (CGPA {jobMinCgpa.toFixed(1)}+)</span>
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 text-[11px] font-mono text-red-600 dark:text-red-400 font-medium">
                               <AlertCircle className="w-3.5 h-3.5 text-red-500" />
-                              <span>Cutoff: {(job.minCgpa ?? 0).toFixed(1)}+</span>
+                              <span>Cutoff: {jobMinCgpa.toFixed(1)}+</span>
                             </span>
                           )}
                         </div>

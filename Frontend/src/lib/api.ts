@@ -152,8 +152,9 @@ export function normalizeJob(rawJob: any): any {
       ? `₹${rawJob.minLpa} - ${rawJob.maxLpa || rawJob.minLpa} LPA`
       : 'Competitive');
 
-  const minCgpa = rawJob.minCgpa ?? (rawJob.minCGPA ? Number(rawJob.minCGPA) : 0);
-  const minCGPA = rawJob.minCGPA ?? minCgpa;
+  const rawCgpaVal = rawJob.minCgpa ?? rawJob.minCGPA;
+  const minCgpa = (rawCgpaVal !== undefined && rawCgpaVal !== null && Number(rawCgpaVal) > 0) ? Number(rawCgpaVal) : 6.5;
+  const minCGPA = minCgpa;
 
   const isClosed =
     rawJob.isClosed !== undefined
@@ -428,6 +429,13 @@ export const api = {
 
   // Applications & Candidate Module
   applications: {
+    async extractText(data: { fileBase64: string; fileName?: string }) {
+      return apiRequest<{ success: boolean; text?: string; length?: number; error?: string }>('/applications/extract-text', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+
     async applyToJob(data: {
       jobId: string;
       resumeUrl?: string;

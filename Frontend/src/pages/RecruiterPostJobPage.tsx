@@ -54,7 +54,7 @@ export const RecruiterPostJobPage: React.FC = () => {
   const [minLpa, setMinLpa] = useState<number>(existingJob?.minLpa ?? 0);
   const [maxLpa, setMaxLpa] = useState<number>(existingJob?.maxLpa ?? 0);
 
-  const [minCgpa, setMinCgpa] = useState<number>(existingJob?.minCgpa ?? 0);
+  const [minCgpa, setMinCgpa] = useState<number>(existingJob?.minCgpa || 6.5);
   
   // Application Window (Open From & Close On)
   const [openFrom, setOpenFrom] = useState(existingJob?.openFrom ? toIstDatetimeLocalString(existingJob.openFrom) : defaultOpen);

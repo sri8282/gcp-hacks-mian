@@ -39,7 +39,7 @@ const createJob = async (req, res) => {
       workplaceType,
       skills: skills || [],
       jobDescription,
-      minCGPA,
+      minCGPA: (minCGPA !== undefined && minCGPA !== null && Number(minCGPA) > 0) ? Number(minCGPA) : 6.5,
       applicationOpenAt: applicationOpenAt ? new Date(applicationOpenAt) : null,
       applicationCloseAt: applicationCloseAt ? new Date(applicationCloseAt) : null,
       hiringRounds: hiringRounds || [],

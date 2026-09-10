@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const {
+  extractResumeText,
   checkAtsScore,
   applyToJob,
   getMyApplications,
@@ -9,6 +10,7 @@ const {
 } = require('../controllers/applicationController');
 const { verifyToken, requireRole } = require('../middleware/auth');
 
+router.post('/extract-text', verifyToken, extractResumeText);
 router.post('/check-ats', verifyToken, checkAtsScore);
 router.post('/', verifyToken, requireRole('candidate'), applyToJob);
 router.get('/me', verifyToken, requireRole('candidate'), getMyApplications);

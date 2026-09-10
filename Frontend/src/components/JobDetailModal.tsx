@@ -95,24 +95,36 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
     }
   }, [isOpen, job?.id]);
 
-  const extractTextFromFile = async (file: File): Promise<string> => {
+  const extractTextFromFile = async (file: File): Promise<{ text: string; error?: string }> => {
     if (file.type.includes('text') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
-      return await file.text();
+      const text = await file.text();
+      return { text };
     }
 
     try {
-      const buffer = await file.arrayBuffer();
-      const decoder = new TextDecoder('latin1');
-      const rawText = decoder.decode(buffer);
+      // 1. Try server-side pdf-parse extraction via base64
+      const arrayBuf = await file.arrayBuffer();
+      const base64 = btoa(
+        new Uint8Array(arrayBuf).reduce((data, byte) => data + String.fromCharCode(byte), '')
+      );
 
-      // 1. Extract text in PDF parenthesis operators (text)
+      const serverRes = await api.applications.extractText({ fileBase64: base64, fileName: file.name }).catch(() => null);
+      if (serverRes && serverRes.success && serverRes.text && serverRes.text.length >= 10) {
+        return { text: serverRes.text };
+      }
+      if (serverRes && serverRes.error) {
+        return { text: '', error: serverRes.error };
+      }
+
+      // 2. Client-side fallback: Extract text in PDF parenthesis operators (text)
+      const decoder = new TextDecoder('latin1');
+      const rawText = decoder.decode(arrayBuf);
       const matches = rawText.match(/\((.*?)\)/g) || [];
       let extracted = matches
         .map((m) => m.slice(1, -1).replace(/\\([()\\])/g, '$1').trim())
         .filter((s) => s.length > 0 && !s.startsWith('/') && !s.startsWith('Identity') && !s.includes('Obj'))
         .join(' ');
 
-      // 2. Fallback: Extract uncompressed word tokens
       if (extracted.trim().length < 20) {
         const words = rawText.match(/[a-zA-Z0-9+#.-]{2,}/g) || [];
         const pdfKeywords = new Set([
@@ -123,10 +135,21 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
         extracted = words.filter((w) => !pdfKeywords.has(w)).join(' ');
       }
 
-      return extracted.trim();
+      const textResult = extracted.trim();
+      if (!textResult || textResult.length < 10) {
+        return {
+          text: '',
+          error: "This PDF doesn't contain selectable text — it may be a scanned image. Please upload a PDF exported directly from a text editor (Word, Google Docs, etc.).",
+        };
+      }
+
+      return { text: textResult };
     } catch (err) {
       console.warn('Text extraction error:', err);
-      return '';
+      return {
+        text: '',
+        error: "This PDF doesn't contain selectable text — it may be a scanned image. Please upload a PDF exported directly from a text editor (Word, Google Docs, etc.).",
+      };
     }
   };
 
@@ -137,11 +160,13 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
     setScanResult(null);
 
     try {
-      const extractedText = await extractTextFromFile(file);
-      console.log(`Extracted resume text: ${extractedText.length} characters`);
+      const { text: extractedText, error: parseError } = await extractTextFromFile(file);
+      console.log(`Extracted resume text: ${extractedText.length} characters: "${extractedText.slice(0, 200)}"`);
 
-      if (!extractedText || extractedText.length < 10) {
-        setUploadError("Couldn't read text from this file — try re-saving it as a standard PDF or text document and re-uploading.");
+      if (parseError || !extractedText || extractedText.length < 10) {
+        setUploadError(
+          parseError || "This PDF doesn't contain selectable text — it may be a scanned image. Please upload a PDF exported directly from a text editor (Word, Google Docs, etc.)."
+        );
       } else {
         setUploadedResumeText(extractedText);
       }
@@ -189,7 +214,7 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
   const location = job.location || 'Bengaluru, KA (Remote)';
   const workplaceType = job.workplaceType || 'Remote';
   const payRange = job.payRange || job.salary || (job.minLpa && job.maxLpa ? `₹${job.minLpa} - ₹${job.maxLpa} LPA` : '₹12 - ₹18 LPA');
-  const minCgpa = job.minCgpa ?? job.minCGPA ?? 7.0;
+  const minCgpa = (job.minCgpa !== undefined && job.minCgpa !== null && Number(job.minCgpa) > 0) ? Number(job.minCgpa) : ((job as any).minCGPA && Number((job as any).minCGPA) > 0 ? Number((job as any).minCGPA) : 6.5);
   const description =
     job.description ||
     job.jobDescription ||

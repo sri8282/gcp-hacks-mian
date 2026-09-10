@@ -1,8 +1,46 @@
-const { Application, Job, CandidateProfile, Notification } = require('../models');
-const { calculateATS } = require('../services/atsService');
-const { generateUploadUrl } = require('../services/storageService');
-const { analyzeResumeMatch } = require('../services/geminiService');
-const { createNotification } = require('../services/notificationService');
+const pdfParse = require('pdf-parse');
+
+const extractResumeText = async (req, res) => {
+  try {
+    const { fileBase64, fileName } = req.body;
+    if (!fileBase64) {
+      return res.status(400).json({ message: 'fileBase64 is required' });
+    }
+
+    const buffer = Buffer.from(fileBase64.replace(/^data:.*?;base64,/, ''), 'base64');
+    let extractedText = '';
+
+    if (fileName && (fileName.endsWith('.txt') || fileName.endsWith('.md'))) {
+      extractedText = buffer.toString('utf-8');
+    } else {
+      const pdfData = await pdfParse(buffer);
+      extractedText = (pdfData.text || '').trim();
+    }
+
+    console.log(`Extracted resume text: ${extractedText.length} characters: "${extractedText.slice(0, 200).replace(/\s+/g, ' ')}"`);
+
+    if (!extractedText || extractedText.length < 10) {
+      return res.json({
+        success: false,
+        text: '',
+        error: "This PDF doesn't contain selectable text — it may be a scanned image. Please upload a PDF exported directly from a text editor (Word, Google Docs, etc.).",
+      });
+    }
+
+    return res.json({
+      success: true,
+      text: extractedText,
+      length: extractedText.length,
+    });
+  } catch (error) {
+    console.error('Error extracting resume text:', error);
+    return res.json({
+      success: false,
+      text: '',
+      error: "This PDF doesn't contain selectable text — it may be a scanned image. Please upload a PDF exported directly from a text editor (Word, Google Docs, etc.).",
+    });
+  }
+};
 
 const checkAtsScore = async (req, res) => {
   try {
@@ -35,6 +73,14 @@ const checkAtsScore = async (req, res) => {
 
     if (Array.isArray(candidateSkills) && candidateSkills.length > 0) {
       resumeText += `\nSkills: ${candidateSkills.join(', ')}`;
+    }
+
+    console.log(`Extracted resume text: ${resumeText.length} characters: "${resumeText.slice(0, 200).replace(/\s+/g, ' ')}"`);
+
+    if (!resumeText || resumeText.trim().length < 10) {
+      return res.status(400).json({
+        message: "This PDF doesn't contain selectable text — it may be a scanned image. Please upload a PDF exported directly from a text editor (Word, Google Docs, etc.)."
+      });
     }
 
     const targetJobDescription = job.jobDescription || job.description || `${job.title} at ${job.companyName || 'Company'}`;
@@ -256,6 +302,7 @@ const deleteApplication = async (req, res) => {
 };
 
 module.exports = {
+  extractResumeText,
   checkAtsScore,
   getResumeUploadUrl,
   applyToJob,
