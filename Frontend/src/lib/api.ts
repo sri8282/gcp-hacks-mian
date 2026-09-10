@@ -168,8 +168,15 @@ export function normalizeJob(rawJob: any): any {
 
   const category = rawJob.category || 'General';
 
+  const applicantCount =
+    rawJob.applicantCount ??
+    rawJob.applicationsCount ??
+    (Array.isArray(rawJob.applications) ? rawJob.applications.length : 0);
+
   return {
     ...rawJob,
+    applicantCount,
+    applicationsCount: applicantCount,
     company,
     companyName,
     companyInitials,
@@ -231,6 +238,24 @@ export function normalizeApplication(rawApp: any): any {
     (rawApp.candidate?.candidateProfile?.cgpa ? Number(rawApp.candidate.candidateProfile.cgpa) : undefined) ??
     (rawApp.candidateProfile?.cgpa ? Number(rawApp.candidateProfile.cgpa) : undefined);
 
+  const candidatePassingYear =
+    rawApp.candidatePassingYear ||
+    (rawApp.candidate?.candidateProfile?.passingYear ? String(rawApp.candidate.candidateProfile.passingYear) : undefined) ||
+    (rawApp.candidateProfile?.passingYear ? String(rawApp.candidateProfile.passingYear) : undefined) ||
+    (rawApp.passingYear ? String(rawApp.passingYear) : undefined) ||
+    '';
+
+  const rawApplied = rawApp.appliedDate || rawApp.appliedAt || rawApp.createdAt || rawApp.created_at;
+  let appliedDate = '';
+  if (rawApplied) {
+    const d = new Date(rawApplied);
+    if (!isNaN(d.getTime())) {
+      appliedDate = d.toISOString().split('T')[0];
+    } else {
+      appliedDate = String(rawApplied);
+    }
+  }
+
   const candidateCertifications =
     rawApp.candidateCertifications ||
     rawApp.candidate?.candidateProfile?.certifications ||
@@ -269,6 +294,8 @@ export function normalizeApplication(rawApp: any): any {
     role,
     candidateCollege,
     candidateCgpa,
+    candidatePassingYear,
+    appliedDate: appliedDate || rawApp.appliedDate,
     candidateCertifications,
     candidateInterestedRoles,
     candidateLinkedInUrl,
@@ -435,7 +462,17 @@ export const api = {
 
 
     async updateApplicationStatus(id: string, status: string, currentRound?: number) {
-      const res = await apiRequest<{ application: any }>(`/recruiter/applications/${id}/status`, {
+      let role = 'candidate';
+      try {
+        const stored = localStorage.getItem('hirehub_user');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed.role) role = parsed.role;
+        }
+      } catch (e) {}
+
+      const endpoint = role === 'admin' ? `/admin/applications/${id}/status` : `/recruiter/applications/${id}/status`;
+      const res = await apiRequest<{ application: any }>(endpoint, {
         method: 'PATCH',
         body: JSON.stringify({ status, currentRound }),
       });

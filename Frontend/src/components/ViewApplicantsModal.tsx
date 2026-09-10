@@ -82,7 +82,8 @@ export const ViewApplicantsModal: React.FC<ViewApplicantsModalProps> = ({ job, o
     if (!job?.id) return;
     setIsFetchingApplicants(true);
     try {
-      const freshApps = await api.recruiter.getApplicantsForJob(job.id);
+      const fetchFn = user?.role === 'admin' ? api.admin.getApplicantsForJob : api.recruiter.getApplicantsForJob;
+      const freshApps = await fetchFn(job.id);
       setFetchedApplicants(freshApps);
 
       // Merge into global applications state so applicant count on job cards updates immediately
@@ -95,7 +96,7 @@ export const ViewApplicantsModal: React.FC<ViewApplicantsModalProps> = ({ job, o
     } finally {
       setIsFetchingApplicants(false);
     }
-  }, [job?.id, setApplications]);
+  }, [job?.id, user?.role, setApplications]);
 
 
   useEffect(() => {
@@ -359,16 +360,33 @@ export const ViewApplicantsModal: React.FC<ViewApplicantsModalProps> = ({ job, o
       const isEligible = candidateCgpa !== null ? candidateCgpa >= minCgpa : false;
       const resumeFileName = app.resumeFileName || (app.resumeUrl ? app.resumeUrl.split('/').pop() : 'N/A');
 
+      const graduationYear =
+        app.candidatePassingYear ||
+        (app as any).passingYear ||
+        (app as any).candidateProfile?.passingYear ||
+        (app as any).candidate?.candidateProfile?.passingYear ||
+        'N/A';
+
+      const rawApplied = app.appliedDate || (app as any).appliedAt || (app as any).createdAt || (app as any).created_at;
+      let appliedDateFormatted = 'N/A';
+      if (rawApplied) {
+        const d = new Date(rawApplied);
+        if (!isNaN(d.getTime())) {
+          appliedDateFormatted = d.toISOString().split('T')[0];
+        } else {
+          appliedDateFormatted = String(rawApplied);
+        }
+      }
+
       return {
         'Full Name': app.candidateName || 'Candidate',
         'Email': app.candidateEmail || 'N/A',
         'University': app.candidateCollege || 'N/A',
-        'Graduation Year': app.candidatePassingYear || 'N/A',
+        'Graduation Year': graduationYear,
         'CGPA': candidateCgpa !== null ? candidateCgpa : 'N/A',
         'Eligibility': isEligible ? 'Eligible' : 'Not Eligible',
         'Application Status': app.status || 'Applied',
-        'Applied Date': app.appliedDate || 'N/A',
-        'Last Updated Date': app.lastUpdatedDate || 'N/A',
+        'Applied Date': appliedDateFormatted,
         'Resume filename': resumeFileName || 'N/A',
       };
     });

@@ -138,11 +138,27 @@ const getAllJobs = async (req, res) => {
           as: 'recruiter',
           attributes: ['id', 'name', 'email'],
         },
+        {
+          model: Application,
+          as: 'applications',
+          attributes: ['id'],
+        },
       ],
       order: [['createdAt', 'DESC']],
     });
 
-    return res.json({ jobs });
+    const jobsWithCount = jobs.map((j) => {
+      const plain = j.get({ plain: true });
+      const applicantCount = plain.applications ? plain.applications.length : 0;
+      delete plain.applications;
+      return {
+        ...plain,
+        applicantCount,
+        applicationsCount: applicantCount,
+      };
+    });
+
+    return res.json({ jobs: jobsWithCount });
   } catch (error) {
     console.error('Error in getAllJobs:', error);
     return res.status(500).json({ message: 'Failed to fetch platform jobs' });

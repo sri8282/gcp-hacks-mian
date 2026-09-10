@@ -5,6 +5,7 @@ import { Job, AdminSeekerUser, AdminRecruiterUser } from '../types';
 import { AdminSeekerDossierModal } from '../components/AdminSeekerDossierModal';
 import { AdminRecruiterJobsModal } from '../components/AdminRecruiterJobsModal';
 import { AdminJobDetailEditModal } from '../components/AdminJobDetailEditModal';
+import { ViewApplicantsModal } from '../components/ViewApplicantsModal';
 import { SendNotificationModal } from '../components/SendNotificationModal';
 import { formatToIST, toIstDatetimeLocalString, getApplicationWindowStatus, formatLpa } from '../utils/istTime';
 import { api, normalizeJob } from '../lib/api';
@@ -70,6 +71,7 @@ export const AdminDashboard: React.FC = () => {
 
   const [adminJobs, setAdminJobs] = useState<Job[]>([]);
   const jobs = adminJobs.length > 0 ? adminJobs : contextJobs;
+  const [selectedJobForApplicants, setSelectedJobForApplicants] = useState<Job | null>(null);
 
   
   // Role guard redirect: non-admin users navigate back to their dashboard
@@ -578,6 +580,10 @@ export const AdminDashboard: React.FC = () => {
 
   // Helper to get applicant count for a job
   const getJobApplicantCount = (jobId: string) => {
+    const job = jobs.find((j) => j.id === jobId);
+    if (job && typeof (job as any).applicantCount === 'number') {
+      return (job as any).applicantCount;
+    }
     return applications.filter((a) => a.jobId === jobId).length;
   };
 
@@ -1457,10 +1463,21 @@ export const AdminDashboard: React.FC = () => {
                             </td>
 
                             {/* Applicant Count */}
-                            <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                              <span className="inline-flex items-center justify-center min-w-6 px-2 py-0.5 rounded text-xs font-bold bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-900 dark:text-white">
-                                {appCount}
-                              </span>
+                            <td
+                              className="py-3.5 px-4 text-center whitespace-nowrap"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedJobForApplicants(job);
+                              }}
+                            >
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-1.5 min-w-6 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 transition-colors cursor-pointer"
+                                title="Click to view and export full applicant list"
+                              >
+                                <Users className="w-3.5 h-3.5" />
+                                <span>{appCount}</span>
+                              </button>
                             </td>
 
                             {/* Admin Override Toggle Buttons */}
@@ -2987,6 +3004,13 @@ export const AdminDashboard: React.FC = () => {
       {/* TOAST NOTIFICATION */}
       {/* ========================================================================= */}
 
+
+      {selectedJobForApplicants && (
+        <ViewApplicantsModal
+          job={selectedJobForApplicants}
+          onClose={() => setSelectedJobForApplicants(null)}
+        />
+      )}
 
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 p-4 rounded-xl bg-neutral-900 dark:bg-white text-white dark:text-black font-mono text-xs shadow-2xl border border-neutral-700 dark:border-neutral-300 flex items-center gap-2.5 animate-in slide-in-from-bottom-5 duration-200">

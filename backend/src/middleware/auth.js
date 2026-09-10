@@ -20,7 +20,18 @@ const verifyToken = (req, res, next) => {
 
 const requireRole = (...roles) => {
   return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) {
+    if (!req.user) {
+      return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
+    }
+    const roleMap = {
+      seeker: 'candidate',
+      candidate: 'candidate',
+      recruiter: 'recruiter',
+      admin: 'admin',
+    };
+    const userRole = roleMap[req.user.role] || req.user.role;
+    const allowedRoles = roles.map((r) => roleMap[r] || r);
+    if (!allowedRoles.includes(userRole) && !roles.includes(req.user.role)) {
       return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
     }
     next();

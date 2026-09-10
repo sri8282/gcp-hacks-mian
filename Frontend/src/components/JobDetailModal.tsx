@@ -370,9 +370,6 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
               type="button"
               onClick={() => {
                 setActiveTab('ats_checker');
-                if (!scanResult && !isScanning) {
-                  handleRunAtsScan();
-                }
               }}
               className={`px-3.5 py-1.5 text-xs font-mono rounded-lg font-semibold transition-colors flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'ats_checker'
@@ -1033,9 +1030,6 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
                 type="button"
                 onClick={() => {
                   setActiveTab('ats_checker');
-                  if (!scanResult && !isScanning) {
-                    handleRunAtsScan();
-                  }
                 }}
                 className="px-3.5 py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 transition-colors cursor-pointer font-semibold"
               >
