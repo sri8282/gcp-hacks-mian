@@ -52,7 +52,7 @@ export const ApplyModal: React.FC<ApplyModalProps> = ({
   // Form State
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [resumeFileName, setResumeFileName] = useState<string>(
-    initialResumeFileName || `${defaultCandidateName.replace(/\s+/g, '_')}_Resume_2026.pdf`
+    initialResumeFileName || (defaultCandidateName ? `${defaultCandidateName.replace(/\s+/g, '_')}_Resume.pdf` : 'Uploaded_Resume.pdf')
   );
   const [uploadedFilePath, setUploadedFilePath] = useState<string | null>(initialResumeUrl || null);
   const [isUploading, setIsUploading] = useState<boolean>(false);

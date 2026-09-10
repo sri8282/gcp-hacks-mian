@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import * as XLSX from 'xlsx';
 import { Job, JobApplication, ApplicationStatus } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
@@ -342,6 +343,66 @@ export const ViewApplicantsModal: React.FC<ViewApplicantsModalProps> = ({ job, o
     }, 4000);
   };
 
+  const [exportToastMsg, setExportToastMsg] = useState<string | null>(null);
+
+  const handleExportExcel = () => {
+    if (!filteredApplicants || filteredApplicants.length === 0) {
+      setExportToastMsg('No applicants to export.');
+      setTimeout(() => setExportToastMsg(null), 3500);
+      return;
+    }
+
+    const minCgpa = job.minCgpa ?? job.minCGPA ?? 0;
+
+    const dataToExport = filteredApplicants.map((app) => {
+      const candidateCgpa = typeof app.candidateCgpa === 'number' ? app.candidateCgpa : null;
+      const isEligible = candidateCgpa !== null ? candidateCgpa >= minCgpa : false;
+      const resumeFileName = app.resumeFileName || (app.resumeUrl ? app.resumeUrl.split('/').pop() : 'N/A');
+
+      return {
+        'Full Name': app.candidateName || 'Candidate',
+        'Email': app.candidateEmail || 'N/A',
+        'University': app.candidateCollege || 'N/A',
+        'Graduation Year': app.candidatePassingYear || 'N/A',
+        'CGPA': candidateCgpa !== null ? candidateCgpa : 'N/A',
+        'Eligibility': isEligible ? 'Eligible' : 'Not Eligible',
+        'Application Status': app.status || 'Applied',
+        'Applied Date': app.appliedDate || 'N/A',
+        'Last Updated Date': app.lastUpdatedDate || 'N/A',
+        'Resume filename': resumeFileName || 'N/A',
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+
+    // Auto-fit column widths
+    const objectKeys = Object.keys(dataToExport[0] || {});
+    const colWidths = objectKeys.map((key) => {
+      let maxLen = key.length;
+      dataToExport.forEach((row: any) => {
+        const val = row[key] !== undefined && row[key] !== null ? String(row[key]) : '';
+        if (val.length > maxLen) maxLen = val.length;
+      });
+      return { wch: Math.min(50, Math.max(12, maxLen + 3)) };
+    });
+    worksheet['!cols'] = colWidths;
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Applicants');
+
+    const sanitizedTitle = (job.title || 'Job')
+      .replace(/[^a-zA-Z0-9]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    const dateStr = new Date().toISOString().split('T')[0];
+    const fileName = `${sanitizedTitle}_Applicants_${dateStr}.xlsx`;
+
+    XLSX.writeFile(workbook, fileName);
+
+    setExportToastMsg(`Successfully exported ${filteredApplicants.length} applicant(s) to ${fileName}`);
+    setTimeout(() => setExportToastMsg(null), 4000);
+  };
+
   const jobBroadcasts = broadcastMessages.filter((b) => b.jobId === job.id);
 
   return (
@@ -384,6 +445,15 @@ export const ViewApplicantsModal: React.FC<ViewApplicantsModalProps> = ({ job, o
 
           <div className="flex items-center gap-2">
             <button
+              onClick={handleExportExcel}
+              title={filteredApplicants.length === 0 ? 'No applicants to export' : 'Download Excel report of filtered applicants'}
+              className="px-3 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 text-xs font-mono font-semibold text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-900 flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-500" />
+              <span>Download Excel</span>
+            </button>
+
+            <button
               onClick={fetchLiveApplicants}
               disabled={isFetchingApplicants}
               title="Refresh applicant list from backend"
@@ -402,6 +472,22 @@ export const ViewApplicantsModal: React.FC<ViewApplicantsModalProps> = ({ job, o
           </div>
 
         </div>
+
+        {/* Export Toast Notification */}
+        {exportToastMsg && (
+          <div className="mx-6 mt-4 p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs font-mono flex items-center justify-between shadow-sm">
+            <span className="flex items-center gap-2">
+              <Check className="w-4 h-4 text-emerald-500 shrink-0" />
+              <span>{exportToastMsg}</span>
+            </span>
+            <button
+              onClick={() => setExportToastMsg(null)}
+              className="text-neutral-400 hover:text-white cursor-pointer ml-2"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {/* Broadcast Toast Notification */}
         {broadcastToast && (

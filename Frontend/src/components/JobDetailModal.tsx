@@ -97,6 +97,7 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
     setIsUploadingResume(true);
     setUploadError(null);
     setUploadedResumeFileName(file.name);
+    setScanResult(null);
 
     try {
       if (file.type.includes('text') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
@@ -179,7 +180,13 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
     job.companyLinkedInUrl ||
     `https://linkedin.com/company/${company.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
 
-  const resumeFileName = `${(seekerProfile?.fullName || 'Alex_Morgan').replace(/\s+/g, '_')}_Resume_2026.pdf`;
+  const dossierFileName = uploadedResumeFileName || (seekerProfile?.fullName ? `${seekerProfile.fullName.replace(/\s+/g, '_')}_Profile` : 'Candidate_Profile_Data');
+
+  const getMatchGrade = (score: number) => {
+    if (score >= 80) return 'Exceptional Match';
+    if (score >= 60) return 'Good Fit';
+    return 'Weak Match';
+  };
 
   // Compute ATS Result using Gemini AI analysis with keyword fallback
   const handleRunAtsScan = async () => {
@@ -187,34 +194,33 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
     setScanProgress(30);
     setScanResult(null);
 
-    const candSkills = seekerProfile?.skills || [];
-    const matched = skills.filter((s) =>
-      candSkills.some((cs) => cs.toLowerCase().includes(s.toLowerCase()) || s.toLowerCase().includes(cs.toLowerCase()))
-    );
-    const missing = skills.filter((s) => !matched.includes(s));
-
     const candidateResumeText = uploadedResumeText || [
-      `Name: ${seekerProfile?.fullName || ''}`,
+      `Name: ${seekerProfile?.fullName || user?.name || ''}`,
       `College: ${seekerProfile?.collegeName || ''}`,
       `CGPA: ${candidateCgpa}`,
-      `Skills: ${(seekerProfile?.skills || candSkills).join(', ')}`,
+      `Skills: ${(seekerProfile?.skills || []).join(', ')}`,
       `Certifications: ${(seekerProfile?.certifications || []).join(', ')}`,
       `Interested Roles: ${(seekerProfile?.interestedRoles || []).join(', ')}`,
     ].filter(Boolean).join('\n');
+
+    // Search keywords directly in the actual resume text + candidate profile skills
+    const fullSearchableText = (candidateResumeText + ' ' + (seekerProfile?.skills || []).join(' ')).toLowerCase();
+    const matched = skills.filter((s) => fullSearchableText.includes(s.toLowerCase()));
+    const missing = skills.filter((s) => !matched.includes(s));
 
     try {
       setScanProgress(60);
       const res = await api.applications.checkAts({
         jobId: job.id,
         resumeText: candidateResumeText,
-        candidateSkills: candSkills,
+        candidateSkills: seekerProfile?.skills || [],
       });
 
       setScanProgress(100);
-      const finalScore = res.matchScore;
+      const finalScore = typeof res.matchScore === 'number' ? res.matchScore : 0;
       setScanResult({
         score: finalScore,
-        matchGrade: finalScore >= 85 ? 'Exceptional Match' : finalScore >= 75 ? 'Strong Potential' : 'Moderate Alignment',
+        matchGrade: getMatchGrade(finalScore),
         matchedSkills: matched,
         missingSkills: missing,
         suggestions: res.summary ? [res.summary] : [],
@@ -222,22 +228,21 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
         gaps: res.gaps || [],
         summary: res.summary || '',
       });
-    } catch (err) {
+    } catch (err: any) {
       console.warn('API checkAts failed in JobDetailModal, using keyword fallback:', err);
       setScanProgress(100);
       const matchRatio = skills.length > 0 ? matched.length / skills.length : 0;
-      const cgpaBonus = candidateCgpa >= minCgpa ? 5 : -5;
-      const finalScore = Math.min(100, Math.max(0, Math.round(matchRatio * 100 + (skills.length > 0 ? cgpaBonus : 0))));
+      const finalScore = Math.min(100, Math.max(0, Math.round(matchRatio * 100)));
 
       setScanResult({
         score: finalScore,
-        matchGrade: finalScore >= 85 ? 'Exceptional Match' : finalScore >= 75 ? 'Strong Potential' : 'Moderate Alignment',
+        matchGrade: getMatchGrade(finalScore),
         matchedSkills: matched,
         missingSkills: missing,
-        suggestions: ['Evaluated using basic skill matching.'],
+        suggestions: ['Evaluated using keyword matching fallback.'],
         strengths: [],
         gaps: [],
-        summary: 'Basic keyword matching analysis was used.',
+        summary: 'Keyword matching analysis was used.',
       });
     } finally {
       setIsScanning(false);
@@ -755,8 +760,33 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
                     />
                   </div>
                   <div className="text-[11px] font-mono text-neutral-500">
-                    Evaluating dossier: <strong className="text-neutral-700 dark:text-neutral-300">{resumeFileName}</strong>
+                    Evaluating dossier: <strong className="text-neutral-700 dark:text-neutral-300">{dossierFileName}</strong>
                   </div>
+                </div>
+              )}
+
+              {/* Neutral State when scan has not been run yet */}
+              {!scanResult && !isScanning && (
+                <div className="p-6 rounded-xl bg-neutral-50 dark:bg-neutral-900/40 border border-neutral-200 dark:border-neutral-800 text-center space-y-3 font-mono">
+                  <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mx-auto text-emerald-500">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-bold text-neutral-900 dark:text-white">
+                      ATS Score Not Checked Yet
+                    </h4>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 max-w-md mx-auto">
+                      Click the button below to run Gemini AI resume analysis against {title} requirements.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRunAtsScan}
+                    className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs inline-flex items-center gap-2 transition-colors cursor-pointer shadow-xs"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>Check ATS Score</span>
+                  </button>
                 </div>
               )}
 
@@ -769,26 +799,44 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
                       
                       {/* Left: Score Ring + Grade */}
                       <div className="md:col-span-7 flex items-center gap-5 border-b md:border-b-0 md:border-r border-neutral-200 dark:border-neutral-800 pb-4 md:pb-0 md:pr-4">
-                        <div className="relative w-20 h-20 rounded-full bg-emerald-500/10 border-2 border-emerald-500 flex flex-col items-center justify-center shrink-0 shadow-xs">
-                          <span className="text-2xl font-mono font-extrabold text-emerald-600 dark:text-emerald-400">
+                        <div className={`relative w-20 h-20 rounded-full flex flex-col items-center justify-center shrink-0 shadow-xs border-2 ${
+                          scanResult.score >= 80
+                            ? 'bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400'
+                            : scanResult.score >= 60
+                            ? 'bg-blue-500/10 border-blue-500 text-blue-600 dark:text-blue-400'
+                            : 'bg-red-500/10 border-red-500 text-red-500'
+                        }`}>
+                          <span className="text-2xl font-mono font-extrabold">
                             {scanResult.score}%
                           </span>
-                          <span className="text-[9px] font-mono font-bold uppercase text-emerald-600/80 dark:text-emerald-400/80 -mt-1">
+                          <span className="text-[9px] font-mono font-bold uppercase opacity-80 -mt-1">
                             MATCH
                           </span>
                         </div>
 
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
-                            <span className="px-2.5 py-0.5 rounded text-xs font-mono font-bold bg-emerald-500 text-black shadow-xs">
+                            <span className={`px-2.5 py-0.5 rounded text-xs font-mono font-bold shadow-xs ${
+                              scanResult.score >= 80
+                                ? 'bg-emerald-500 text-black'
+                                : scanResult.score >= 60
+                                ? 'bg-blue-500 text-white'
+                                : 'bg-red-500 text-white'
+                            }`}>
                               {scanResult.matchGrade}
                             </span>
                             <span className="text-xs font-mono text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-                              <Sparkles className="w-3 h-3" /> ATS Parsable
+                              <Sparkles className="w-3 h-3" /> ATS Evaluated
                             </span>
                           </div>
                           <p className="text-xs font-sans text-neutral-600 dark:text-neutral-400 leading-normal">
-                            High semantic alignment with technical competencies and academic requirements.
+                            {scanResult.summary || (
+                              scanResult.score >= 80
+                                ? `Strong semantic alignment with technical competencies. Matched ${scanResult.matchedSkills.length} of ${skills.length} key skills.`
+                                : scanResult.score >= 60
+                                ? `Moderate alignment with core role requirements. Matched ${scanResult.matchedSkills.length} of ${skills.length} key skills.`
+                                : `${scanResult.matchedSkills.length} of ${skills.length} required skills found in resume. Candidate does not meet core requirements.`
+                            )}
                           </p>
                         </div>
                       </div>
@@ -799,7 +847,11 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
                           <span className="text-[10px] uppercase font-semibold text-neutral-400 dark:text-neutral-500 block">
                             Keywords Hit
                           </span>
-                          <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                          <span className={`text-sm font-bold ${
+                            scanResult.matchedSkills.length > 0
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-red-500'
+                          }`}>
                             {scanResult.matchedSkills.length} / {skills.length}
                           </span>
                         </div>
@@ -813,7 +865,7 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
                         </div>
                         <div className="col-span-2 pt-1 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between text-[11px] text-neutral-500">
                           <span>Dossier File:</span>
-                          <span className="text-emerald-500 font-bold truncate max-w-[150px]">{resumeFileName}</span>
+                          <span className="text-emerald-500 font-bold truncate max-w-[150px]">{dossierFileName}</span>
                         </div>
                       </div>
                     </div>
