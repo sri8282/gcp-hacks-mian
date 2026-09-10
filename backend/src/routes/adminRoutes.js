@@ -8,6 +8,7 @@ const {
   adminUpdateJob,
   forceCloseJob,
   forceReopenJob,
+  adminDeleteJob,
   getPlatformStats,
   getApplicantsForJobAdmin,
   adminUpdateApplicationStatus,
@@ -24,6 +25,7 @@ router.patch('/users/:id', adminUpdateUser);
 
 router.get('/jobs', getAllJobs);
 router.patch('/jobs/:id', adminUpdateJob);
+router.delete('/jobs/:id', adminDeleteJob);
 router.patch('/jobs/:id/force-close', forceCloseJob);
 router.patch('/jobs/:id/force-reopen', forceReopenJob);
 router.get('/jobs/:jobId/applicants', getApplicantsForJobAdmin);

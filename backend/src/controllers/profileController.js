@@ -1,4 +1,4 @@
-const { CandidateProfile } = require('../models');
+const { CandidateProfile, User } = require('../models');
 
 const upsertCandidateProfile = async (req, res) => {
   try {
@@ -11,7 +11,11 @@ const upsertCandidateProfile = async (req, res) => {
       linkedinUrl,
       portfolioUrl,
       resumeUrl,
+      avatarUrl,
+      avatar_url,
     } = req.body;
+
+    const finalAvatarUrl = avatarUrl || avatar_url;
 
     let profile = await CandidateProfile.findOne({
       where: { userId: req.user.id },
@@ -26,6 +30,8 @@ const upsertCandidateProfile = async (req, res) => {
       if (linkedinUrl !== undefined) profile.linkedinUrl = linkedinUrl;
       if (portfolioUrl !== undefined) profile.portfolioUrl = portfolioUrl;
       if (resumeUrl !== undefined) profile.resumeUrl = resumeUrl;
+      if (finalAvatarUrl !== undefined) profile.avatarUrl = finalAvatarUrl;
+      profile.isProfileComplete = true;
 
       await profile.save();
     } else {
@@ -39,7 +45,18 @@ const upsertCandidateProfile = async (req, res) => {
         linkedinUrl,
         portfolioUrl,
         resumeUrl,
+        avatarUrl: finalAvatarUrl,
+        isProfileComplete: true,
       });
+    }
+
+    const user = await User.findByPk(req.user.id);
+    if (user) {
+      if (finalAvatarUrl !== undefined) {
+        user.avatarUrl = finalAvatarUrl;
+      }
+      user.isProfileComplete = true;
+      await user.save();
     }
 
     return res.json({ profile });

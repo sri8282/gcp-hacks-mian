@@ -46,7 +46,8 @@ import {
   BellRing,
   RotateCw,
   Terminal,
-  Server
+  Server,
+  Trash2
 } from 'lucide-react';
 
 import { Navigate } from 'react-router-dom';
@@ -497,6 +498,23 @@ export const AdminDashboard: React.FC = () => {
       showToast(res.message || 'Job reopened by admin');
     } catch (err: any) {
       showToast(err.message || 'Failed to reopen job');
+    }
+  };
+
+  // Admin Permanently Delete Job via DELETE /admin/jobs/:id
+  const handleAdminDeleteJob = async (job: Job) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to permanently delete the job posting "${job.title}" at ${job.company}? This action is irreversible and will also remove all candidate applications submitted for this job.`
+    );
+    if (!confirmed) return;
+
+    try {
+      await api.admin.deleteJob(job.id);
+      deleteJob(job.id);
+      showToast(`Job posting "${job.title}" permanently deleted.`);
+    } catch (err: any) {
+      console.error('Admin delete job error:', err);
+      showToast(err.message || 'Failed to delete job posting.');
     }
   };
 
@@ -1423,10 +1441,10 @@ export const AdminDashboard: React.FC = () => {
                                       ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
                                       : windowStatus.status === 'upcoming'
                                       ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30'
-                                      : 'bg-neutral-100 dark:bg-neutral-900 text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-800'
+                                      : 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30'
                                   }`}
                                 >
-                                  <span className={`w-1.5 h-1.5 rounded-full ${windowStatus.isOpen ? 'bg-emerald-500 animate-pulse' : 'bg-neutral-400'}`} />
+                                  <span className={`w-1.5 h-1.5 rounded-full ${windowStatus.isOpen ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
                                   {windowStatus.badgeLabel}
                                 </span>
 
@@ -1454,13 +1472,11 @@ export const AdminDashboard: React.FC = () => {
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    const next = job.adminForceStatus === 'open' ? 'auto' : 'open';
-                                    updateJob(job.id, { adminForceStatus: next });
-                                    showToast(
-                                      next === 'open'
-                                        ? `Force Open override applied for ${job.title}`
-                                        : `Force Open removed for ${job.title}`
-                                    );
+                                    if (job.adminForceStatus === 'open') {
+                                      handleAdminForceReopen(job.id);
+                                    } else {
+                                      handleAdminForceReopen(job.id);
+                                    }
                                   }}
                                   className={`px-2 py-1 rounded text-[10px] font-bold border transition-colors cursor-pointer ${
                                     job.adminForceStatus === 'open'
@@ -1475,17 +1491,15 @@ export const AdminDashboard: React.FC = () => {
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    const next = job.adminForceStatus === 'closed' ? 'auto' : 'closed';
-                                    updateJob(job.id, { adminForceStatus: next });
-                                    showToast(
-                                      next === 'closed'
-                                        ? `Force Close override applied for ${job.title}`
-                                        : `Force Close removed for ${job.title}`
-                                    );
+                                    if (job.adminForceStatus === 'closed' || job.adminOverrideClosed) {
+                                      handleAdminForceReopen(job.id);
+                                    } else {
+                                      handleAdminForceClose(job.id);
+                                    }
                                   }}
                                   className={`px-2 py-1 rounded text-[10px] font-bold border transition-colors cursor-pointer ${
-                                    job.adminForceStatus === 'closed'
-                                      ? 'bg-red-500 text-white border-red-500 shadow-xs'
+                                    job.adminForceStatus === 'closed' || job.adminOverrideClosed
+                                      ? 'bg-red-500 text-white border-red-500 shadow-xs font-mono font-bold'
                                       : 'bg-neutral-50 dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400 hover:border-red-500'
                                   }`}
                                   title="Force close this job everywhere"
@@ -1494,10 +1508,10 @@ export const AdminDashboard: React.FC = () => {
                                 </button>
                               </div>
 
-                              {job.adminForceStatus && job.adminForceStatus !== 'auto' && (
+                              {(job.adminForceStatus === 'closed' || job.adminOverrideClosed || job.adminForceStatus === 'open') && (
                                 <div className="text-[9px] font-bold uppercase text-amber-600 dark:text-amber-400 mt-1 flex items-center justify-center gap-1">
                                   <ShieldAlert className="w-2.5 h-2.5" />
-                                  <span>Override: {job.adminForceStatus}</span>
+                                  <span>Override: {job.adminForceStatus === 'closed' || job.adminOverrideClosed ? 'closed' : 'open'}</span>
                                 </div>
                               )}
                             </td>
@@ -1518,6 +1532,16 @@ export const AdminDashboard: React.FC = () => {
                                 >
                                   <Edit2 className="w-3 h-3" />
                                   <span>Edit Details</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleAdminDeleteJob(job)}
+                                  className="px-2.5 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/30 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                                  title="Permanently delete this job posting"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                  <span>Delete</span>
                                 </button>
                               </div>
                             </td>

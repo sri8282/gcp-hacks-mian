@@ -25,6 +25,7 @@ import {
   Search,
   RefreshCw,
   Loader2,
+  Download,
 } from 'lucide-react';
 
 interface ViewApplicantsModalProps {
@@ -217,8 +218,19 @@ export const ViewApplicantsModal: React.FC<ViewApplicantsModalProps> = ({ job, o
     setAtsResult(null);
 
     try {
+      const candidateText = [
+        `Candidate Name: ${app.candidateName}`,
+        `Email: ${app.candidateEmail}`,
+        app.collegeName ? `College: ${app.collegeName}` : '',
+        app.cgpa ? `CGPA: ${app.cgpa}` : '',
+        app.candidateSkills && app.candidateSkills.length > 0 ? `Skills: ${app.candidateSkills.join(', ')}` : '',
+        app.certifications && app.certifications.length > 0 ? `Certifications: ${app.certifications.join(', ')}` : '',
+        app.screeningAnswers && Object.keys(app.screeningAnswers).length > 0 ? `Screening Answers: ${JSON.stringify(app.screeningAnswers)}` : '',
+      ].filter(Boolean).join('\n');
+
       const res = await api.applications.checkAts({
         jobId: job.id,
+        resumeText: candidateText,
         candidateSkills: app.candidateSkills,
       });
 
@@ -255,7 +267,7 @@ export const ViewApplicantsModal: React.FC<ViewApplicantsModalProps> = ({ job, o
       );
       const missing = jobSkills.filter((s) => !matched.includes(s));
       const matchRatio = jobSkills.length > 0 ? matched.length / jobSkills.length : 0;
-      const calculatedScore = Math.min(98, Math.max(55, Math.round(matchRatio * 85)));
+      const calculatedScore = Math.min(100, Math.max(0, Math.round(matchRatio * 100)));
 
       setAtsResult({
         score: calculatedScore,
@@ -663,15 +675,29 @@ export const ViewApplicantsModal: React.FC<ViewApplicantsModalProps> = ({ job, o
                   <div className="mt-3 pt-3 border-t border-neutral-100 dark:border-neutral-800/80 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
                     <div className="flex items-center gap-3">
                       {app.resumeUrl ? (
-                        <a
-                          href={app.resumeUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1.5 cursor-pointer font-semibold"
-                        >
-                          <FileText className="w-3.5 h-3.5 text-emerald-500" />
-                          {app.resumeFileName || 'View Resume'}
-                        </a>
+                        <div className="flex items-center gap-2">
+                          <a
+                            href={app.resumeUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1.5 cursor-pointer font-semibold"
+                            title="View candidate's submitted resume from Cloud Storage"
+                          >
+                            <FileText className="w-3.5 h-3.5 text-emerald-500" />
+                            <span>{app.resumeFileName || 'Submitted_Resume.pdf'}</span>
+                          </a>
+                          <a
+                            href={app.resumeUrl}
+                            download={app.resumeFileName || 'Submitted_Resume.pdf'}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-mono rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 transition-colors"
+                            title="Download Resume file"
+                          >
+                            <Download className="w-3 h-3" />
+                            <span>Download</span>
+                          </a>
+                        </div>
                       ) : (
                         <button
                           type="button"
@@ -679,7 +705,7 @@ export const ViewApplicantsModal: React.FC<ViewApplicantsModalProps> = ({ job, o
                           className="text-neutral-700 dark:text-neutral-300 hover:text-emerald-500 flex items-center gap-1.5 cursor-pointer font-semibold"
                         >
                           <FileText className="w-3.5 h-3.5 text-emerald-500" />
-                          {app.resumeFileName || 'Resume.pdf'}
+                          <span>{app.resumeFileName || 'Resume.pdf'}</span>
                         </button>
                       )}
 
@@ -816,6 +842,18 @@ export const ViewApplicantsModal: React.FC<ViewApplicantsModalProps> = ({ job, o
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:underline"
                     >
                       <Globe className="w-3.5 h-3.5" /> Portfolio / Website
+                    </a>
+                  )}
+
+                  {viewProfileApp.resumeUrl && (
+                    <a
+                      href={viewProfileApp.resumeUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-bold cursor-pointer transition-colors shadow-xs"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Download Submitted Resume</span>
                     </a>
                   )}
 

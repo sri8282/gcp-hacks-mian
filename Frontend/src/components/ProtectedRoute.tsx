@@ -6,9 +6,14 @@ import { UserRole } from '../types';
 interface ProtectedRouteProps {
   children: React.ReactNode;
   allowedRole?: UserRole | UserRole[];
+  allowIncompleteProfile?: boolean;
 }
 
-export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRole }) => {
+export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
+  children,
+  allowedRole,
+  allowIncompleteProfile = false,
+}) => {
   const { user } = useAuth();
 
   if (!user) {
@@ -18,10 +23,23 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowe
   const roleStr = user.role as string;
   const isCandidate = roleStr === 'seeker' || roleStr === 'candidate';
   const isRecruiter = roleStr === 'recruiter';
+  const isProfileIncomplete = isCandidate && (!user.avatarUrl || user.isProfileComplete === false);
+
+  // If candidate's profile picture is not set, redirect to complete-profile page
+  if (isCandidate && isProfileIncomplete && !allowIncompleteProfile) {
+    return <Navigate to="/seeker/complete-profile" replace />;
+  }
+
+  // If candidate already set their profile picture, redirect away from complete-profile page
+  if (isCandidate && !isProfileIncomplete && allowIncompleteProfile) {
+    return <Navigate to="/seeker/dashboard" replace />;
+  }
 
   // Determine user's target dashboard
   const userDashboard = isCandidate
-    ? '/seeker/dashboard'
+    ? isProfileIncomplete
+      ? '/seeker/complete-profile'
+      : '/seeker/dashboard'
     : isRecruiter
     ? '/recruiter/dashboard'
     : '/admin/dashboard';

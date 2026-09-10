@@ -152,7 +152,11 @@ export const LoginPage: React.FC = () => {
   // If already logged in, redirect
   useEffect(() => {
     if (user) {
-      navigate(`/${user.role}/dashboard`);
+      if ((user.role === 'seeker' || (user.role as string) === 'candidate') && user.isProfileComplete === false) {
+        navigate('/seeker/complete-profile');
+      } else {
+        navigate(`/${user.role}/dashboard`);
+      }
     }
   }, [user, navigate]);
 
@@ -196,14 +200,20 @@ export const LoginPage: React.FC = () => {
           pass: trimmedPass,
         });
         if (res.success) {
-          navigate('/seeker/dashboard');
+          navigate('/seeker/complete-profile');
         } else {
           setErrorMessage(res.message || 'Registration failed. Please try again.');
         }
       } else {
         const res = await login(activeRole, trimmedEmail, trimmedPass);
         if (res.success) {
-          navigate(`/${activeRole}/dashboard`);
+          const isCandidateRole = activeRole === 'seeker' || (activeRole as string) === 'candidate';
+          const isProfileIncomplete = isCandidateRole && user?.isProfileComplete === false;
+          if (isCandidateRole && isProfileIncomplete) {
+            navigate('/seeker/complete-profile');
+          } else {
+            navigate(`/${activeRole}/dashboard`);
+          }
         } else {
           setErrorMessage(
             res.message ||
@@ -222,7 +232,13 @@ export const LoginPage: React.FC = () => {
   const handleGoogleAuthSuccess = (session: { token: string; user: any }) => {
     const success = loginWithVerifiedSession(session);
     if (success) {
-      navigate(`/${activeRole}/dashboard`);
+      const isCandidateRole = activeRole === 'seeker' || (activeRole as string) === 'candidate';
+      const isProfileIncomplete = isCandidateRole && session.user.isProfileComplete === false;
+      if (isCandidateRole && isProfileIncomplete) {
+        navigate('/seeker/complete-profile');
+      } else {
+        navigate(`/${activeRole}/dashboard`);
+      }
     } else {
       setErrorMessage('Failed to initialize session after Google verification.');
     }

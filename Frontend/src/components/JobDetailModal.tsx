@@ -22,6 +22,8 @@ import {
   Share2,
   FileText,
   TrendingUp,
+  UploadCloud,
+  Loader2,
 } from 'lucide-react';
 
 interface JobDetailModalProps {
@@ -31,7 +33,7 @@ interface JobDetailModalProps {
   seekerProfile: SeekerProfile | null;
   hasApplied: boolean;
   applicationStatus?: string;
-  onApply: (job: Job) => void;
+  onApply: (job: Job, initialResume?: { resumeFileName?: string; resumeUrl?: string }) => void;
 }
 
 export const JobDetailModal: React.FC<JobDetailModalProps> = ({
@@ -61,6 +63,14 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
     summary?: string;
   } | null>(null);
 
+  // ATS Resume Upload State
+  const [uploadedResumeFileName, setUploadedResumeFileName] = useState<string | null>(null);
+  const [uploadedResumeUrl, setUploadedResumeUrl] = useState<string | null>(null);
+  const [uploadedResumeText, setUploadedResumeText] = useState<string | null>(null);
+  const [isUploadingResume, setIsUploadingResume] = useState<boolean>(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isDraggingAts, setIsDraggingAts] = useState<boolean>(false);
+
   // Live timer for IST application window countdown
   useEffect(() => {
     const timer = setInterval(() => setNowMs(Date.now()), 1000);
@@ -74,8 +84,52 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
       setScanResult(null);
       setIsScanning(false);
       setCopiedLink(false);
+      setUploadedResumeFileName(null);
+      setUploadedResumeUrl(null);
+      setUploadedResumeText(null);
+      setIsUploadingResume(false);
+      setUploadError(null);
+      setIsDraggingAts(false);
     }
   }, [isOpen, job?.id]);
+
+  const handleUploadAtsResumeToGCS = async (file: File) => {
+    setIsUploadingResume(true);
+    setUploadError(null);
+    setUploadedResumeFileName(file.name);
+
+    try {
+      if (file.type.includes('text') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
+        const textContent = await file.text();
+        setUploadedResumeText(textContent);
+      } else {
+        setUploadedResumeText(`Uploaded Resume File: ${file.name}\nFile type: ${file.type}`);
+      }
+
+      const contentType = file.type || 'application/pdf';
+      const { uploadUrl, filePath } = await api.candidate.getResumeUploadUrl(file.name, contentType);
+
+      const uploadRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': contentType,
+        },
+        body: file,
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error(`Upload failed with status ${uploadRes.status}`);
+      }
+
+      setUploadedResumeUrl(filePath);
+    } catch (err: any) {
+      console.error('ATS resume upload error:', err);
+      setUploadError(err.message || 'Failed to upload resume to Cloud Storage.');
+      setUploadedResumeUrl(null);
+    } finally {
+      setIsUploadingResume(false);
+    }
+  };
 
   if (!isOpen || !job) return null;
 
@@ -94,9 +148,12 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
   const category = job.category || 'Engineering';
   const location = job.location || 'Bengaluru, KA (Remote)';
   const workplaceType = job.workplaceType || 'Remote';
-  const payRange = job.payRange || (job.minLpa && job.maxLpa ? `₹${job.minLpa} - ₹${job.maxLpa} LPA` : 'Competitive LPA');
-  const minCgpa = typeof job.minCgpa === 'number' ? job.minCgpa : 7.0;
-  const description = job.description || 'Join our engineering team to build scalable software and innovative products.';
+  const payRange = job.payRange || job.salary || (job.minLpa && job.maxLpa ? `₹${job.minLpa} - ₹${job.maxLpa} LPA` : '₹12 - ₹18 LPA');
+  const minCgpa = job.minCgpa ?? job.minCGPA ?? 7.0;
+  const description =
+    job.description ||
+    job.jobDescription ||
+    'Key engineering role responsible for building scalable web services, microservices architecture, and cloud infrastructure.';
   const responsibilities = Array.isArray(job.responsibilities) && job.responsibilities.length > 0
     ? job.responsibilities
     : [
@@ -136,10 +193,20 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
     );
     const missing = skills.filter((s) => !matched.includes(s));
 
+    const candidateResumeText = uploadedResumeText || [
+      `Name: ${seekerProfile?.fullName || ''}`,
+      `College: ${seekerProfile?.collegeName || ''}`,
+      `CGPA: ${candidateCgpa}`,
+      `Skills: ${(seekerProfile?.skills || candSkills).join(', ')}`,
+      `Certifications: ${(seekerProfile?.certifications || []).join(', ')}`,
+      `Interested Roles: ${(seekerProfile?.interestedRoles || []).join(', ')}`,
+    ].filter(Boolean).join('\n');
+
     try {
       setScanProgress(60);
       const res = await api.applications.checkAts({
         jobId: job.id,
+        resumeText: candidateResumeText,
         candidateSkills: candSkills,
       });
 
@@ -159,8 +226,8 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
       console.warn('API checkAts failed in JobDetailModal, using keyword fallback:', err);
       setScanProgress(100);
       const matchRatio = skills.length > 0 ? matched.length / skills.length : 0;
-      const cgpaBonus = candidateCgpa >= minCgpa ? 8 : -8;
-      const finalScore = Math.min(96, Math.max(62, Math.round(matchRatio * 82 + 10 + cgpaBonus)));
+      const cgpaBonus = candidateCgpa >= minCgpa ? 5 : -5;
+      const finalScore = Math.min(100, Math.max(0, Math.round(matchRatio * 100 + (skills.length > 0 ? cgpaBonus : 0))));
 
       setScanResult({
         score: finalScore,
@@ -564,6 +631,116 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
                 </div>
               </div>
 
+              {/* Upload Resume to Test ATS Score */}
+              <div className="p-4 rounded-xl bg-neutral-50 dark:bg-neutral-900/40 border border-neutral-200 dark:border-neutral-800 space-y-3 font-mono">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs uppercase font-bold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
+                    <FileText className="w-4 h-4 text-emerald-500" />
+                    <span>Upload Resume to Check ATS Score</span>
+                  </span>
+                  <span className="text-[10px] text-neutral-400">
+                    PDF, DOC, DOCX (Max 10MB)
+                  </span>
+                </div>
+
+                {uploadError && (
+                  <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{uploadError}</span>
+                  </div>
+                )}
+
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDraggingAts(true);
+                  }}
+                  onDragLeave={() => setIsDraggingAts(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDraggingAts(false);
+                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                      handleUploadAtsResumeToGCS(e.dataTransfer.files[0]);
+                    }
+                  }}
+                  className={`border-2 border-dashed rounded-xl p-4 text-center transition-all ${
+                    isDraggingAts
+                      ? 'border-emerald-500 bg-emerald-500/10'
+                      : 'border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 hover:border-neutral-400 dark:hover:border-neutral-600'
+                  }`}
+                >
+                  <input
+                    type="file"
+                    id="ats-resume-upload-input"
+                    accept=".pdf,.doc,.docx"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        handleUploadAtsResumeToGCS(e.target.files[0]);
+                      }
+                    }}
+                    disabled={isUploadingResume}
+                    className="hidden"
+                  />
+
+                  <div className="flex flex-col items-center justify-center gap-1.5">
+                    <div className="w-9 h-9 rounded-full bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 flex items-center justify-center text-emerald-500">
+                      {isUploadingResume ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <UploadCloud className="w-4 h-4" />
+                      )}
+                    </div>
+
+                    <div className="text-xs text-neutral-700 dark:text-neutral-300">
+                      {isUploadingResume ? (
+                        <span className="font-bold text-emerald-500">
+                          Uploading resume to Google Cloud Storage...
+                        </span>
+                      ) : (
+                        <>
+                          <label
+                            htmlFor="ats-resume-upload-input"
+                            className="font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+                          >
+                            Click to upload resume
+                          </label>{' '}
+                          or drag & drop file to test ATS score
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {uploadedResumeFileName && (
+                  <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2 text-neutral-900 dark:text-white">
+                      {isUploadingResume ? (
+                        <Loader2 className="w-4 h-4 text-emerald-500 animate-spin" />
+                      ) : (
+                        <FileText className="w-4 h-4 text-emerald-500" />
+                      )}
+                      <div>
+                        <span className="font-bold block truncate max-w-xs">{uploadedResumeFileName}</span>
+                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 block">
+                          {isUploadingResume
+                            ? '⏳ Uploading to Cloud Storage...'
+                            : uploadedResumeUrl
+                            ? '✓ Uploaded & ready for application submit'
+                            : '✓ Attached for ATS check'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <label
+                      htmlFor="ats-resume-upload-input"
+                      className="px-2.5 py-1 text-[11px] font-mono rounded bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:text-black dark:hover:text-white cursor-pointer"
+                    >
+                      Replace
+                    </label>
+                  </div>
+                )}
+              </div>
+
               {/* Scan in Progress Animation */}
               {isScanning && (
                 <div className="p-8 text-center border border-neutral-200 dark:border-neutral-800 rounded-xl bg-neutral-50 dark:bg-neutral-900/40 space-y-4">
@@ -847,7 +1024,10 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
                 type="button"
                 onClick={() => {
                   onClose();
-                  onApply(job);
+                  onApply(job, {
+                    resumeFileName: uploadedResumeFileName || undefined,
+                    resumeUrl: uploadedResumeUrl || undefined,
+                  });
                 }}
                 className="px-6 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-bold flex items-center gap-2 shadow-sm transition-all transform active:scale-98 cursor-pointer"
               >

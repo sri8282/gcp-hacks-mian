@@ -209,6 +209,7 @@ const forceCloseJob = async (req, res) => {
     }
 
     job.adminOverrideClosed = true;
+    job.isOpen = false;
     await job.save();
 
     return res.json({
@@ -231,6 +232,7 @@ const forceReopenJob = async (req, res) => {
     }
 
     job.adminOverrideClosed = false;
+    job.isOpen = true;
     await job.save();
 
     return res.json({
@@ -420,6 +422,25 @@ const getSystemLogs = async (req, res) => {
   }
 };
 
+const adminDeleteJob = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const job = await Job.findByPk(id);
+
+    if (!job) {
+      return res.status(404).json({ message: 'Job not found' });
+    }
+
+    await Application.destroy({ where: { jobId: id } });
+    await job.destroy();
+
+    return res.json({ message: 'Job posting permanently deleted' });
+  } catch (error) {
+    console.error('Error in adminDeleteJob:', error);
+    return res.status(500).json({ message: 'Failed to delete job' });
+  }
+};
+
 module.exports = {
   getAllUsers,
   toggleUserActive,
@@ -428,6 +449,7 @@ module.exports = {
   adminUpdateJob,
   forceCloseJob,
   forceReopenJob,
+  adminDeleteJob,
   getPlatformStats,
   getApplicantsForJobAdmin,
   adminUpdateApplicationStatus,

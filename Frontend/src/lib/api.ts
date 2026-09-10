@@ -309,7 +309,7 @@ export const api = {
     async googleLogin(idToken: string) {
       return apiRequest<{
         token: string;
-        user: { id: string; name: string; email: string; role: string; avatar_url?: string };
+        user: { id: string; name: string; email: string; role: string; avatar_url?: string; avatarUrl?: string; isProfileComplete?: boolean };
       }>('/auth/google', {
         method: 'POST',
         body: JSON.stringify({ idToken, credential: idToken }),
@@ -319,7 +319,7 @@ export const api = {
     async login(email: string, pass: string) {
       return apiRequest<{
         token: string;
-        user: { id: string; name: string; email: string; role: string; avatar_url?: string };
+        user: { id: string; name: string; email: string; role: string; avatar_url?: string; avatarUrl?: string; isProfileComplete?: boolean };
       }>('/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password: pass }),
@@ -493,6 +493,7 @@ export const api = {
       linkedinUrl?: string;
       portfolioUrl?: string;
       resumeUrl?: string;
+      avatarUrl?: string;
     }) {
       return apiRequest<{ profile: any }>('/candidate/profile', {
         method: 'PUT',
@@ -597,6 +598,12 @@ export const api = {
         body: JSON.stringify(data),
       });
       return { job: res.job ? normalizeJob(res.job) : null };
+    },
+
+    async deleteJob(id: string) {
+      return apiRequest<{ message: string }>(`/admin/jobs/${id}`, {
+        method: 'DELETE',
+      });
     },
 
     async forceCloseJob(id: string) {

@@ -36,6 +36,14 @@ module.exports = (sequelize) => {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
     },
+    avatarUrl: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    isProfileComplete: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    },
   }, {
     tableName: 'users',
     timestamps: true,

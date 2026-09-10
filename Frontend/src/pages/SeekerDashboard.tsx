@@ -82,6 +82,10 @@ export const SeekerDashboard: React.FC = () => {
 
   const [selectedDetailJob, setSelectedDetailJob] = useState<Job | null>(null);
   const [selectedApplyJob, setSelectedApplyJob] = useState<Job | null>(null);
+  const [initialApplyResume, setInitialApplyResume] = useState<{
+    resumeFileName?: string;
+    resumeUrl?: string;
+  } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMode, setFilterMode] = useState<'all' | 'recommended' | 'eligible' | 'open' | 'remote'>('all');
   const [toastMessage, setToMessage] = useState<string | null>(null);
@@ -127,12 +131,16 @@ export const SeekerDashboard: React.FC = () => {
     }, 4000);
   };
 
-  const handleOpenApplyModal = (job: Job) => {
+  const handleOpenApplyModal = (
+    job: Job,
+    initialResume?: { resumeFileName?: string; resumeUrl?: string }
+  ) => {
     const status = getApplicationWindowStatus(job, nowMs);
     if (!status.isOpen) {
       showToast(`Cannot apply: ${status.reason}`);
       return;
     }
+    setInitialApplyResume(initialResume || null);
     setSelectedApplyJob(job);
   };
 
@@ -741,10 +749,9 @@ export const SeekerDashboard: React.FC = () => {
         seekerProfile={seekerProfile}
         hasApplied={applications.some((a) => a.jobId === selectedDetailJob?.id)}
         applicationStatus={applications.find((a) => a.jobId === selectedDetailJob?.id)?.status}
-
-        onApply={(job) => {
+        onApply={(job, initialResume) => {
           setSelectedDetailJob(null);
-          handleOpenApplyModal(job);
+          handleOpenApplyModal(job, initialResume);
         }}
       />
 
@@ -752,10 +759,14 @@ export const SeekerDashboard: React.FC = () => {
       <ApplyModal
         job={selectedApplyJob}
         isOpen={!!selectedApplyJob}
-        onClose={() => setSelectedApplyJob(null)}
+        onClose={() => {
+          setSelectedApplyJob(null);
+          setInitialApplyResume(null);
+        }}
         onSubmit={handleConfirmSubmitApplication}
         defaultCandidateName={seekerProfile?.fullName || user?.name || 'Candidate'}
-
+        initialResumeUrl={initialApplyResume?.resumeUrl}
+        initialResumeFileName={initialApplyResume?.resumeFileName}
       />
     </div>
   );

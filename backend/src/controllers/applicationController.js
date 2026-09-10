@@ -34,8 +34,10 @@ const checkAtsScore = async (req, res) => {
       resumeText += `\nSkills: ${candidateSkills.join(', ')}`;
     }
 
+    const targetJobDescription = job.jobDescription || job.description || `${job.title} at ${job.companyName || 'Company'}`;
+
     try {
-      const aiResult = await analyzeResumeMatch(resumeText, job.description, job.skills);
+      const aiResult = await analyzeResumeMatch(resumeText, targetJobDescription, job.skills);
       return res.json({
         success: true,
         source: 'gemini-ai',
@@ -43,7 +45,7 @@ const checkAtsScore = async (req, res) => {
       });
     } catch (aiError) {
       console.warn('Gemini API resume analysis failed, falling back to keyword ATS calculation:', aiError.message);
-      const score = calculateATS(resumeText, job);
+      const score = calculateATS(resumeText, { ...job.toJSON(), jobDescription: targetJobDescription });
       return res.json({
         success: true,
         source: 'keyword-fallback',
@@ -123,7 +125,15 @@ const applyToJob = async (req, res) => {
       return res.status(409).json({ message: 'You have already applied to this job' });
     }
 
-    const atsScore = calculateATS(resumeText, job);
+    let atsScore = 0;
+    try {
+      const targetJobDescription = job.jobDescription || job.description || `${job.title} at ${job.companyName || 'Company'}`;
+      const aiRes = await analyzeResumeMatch(resumeText || '', targetJobDescription, job.skills);
+      atsScore = aiRes.matchScore;
+    } catch (aiErr) {
+      console.warn('Gemini ATS score generation failed during applyToJob, using fallback:', aiErr.message);
+      atsScore = calculateATS(resumeText, job);
+    }
 
     const application = await Application.create({
       candidateId: req.user.id,

@@ -11,6 +11,7 @@ export interface SeekerProfile {
   linkedInUrl?: string;
   portfolioUrl?: string;
   skills?: string[];
+  avatarUrl?: string;
 }
 
 export interface User {

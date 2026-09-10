@@ -159,11 +159,11 @@ export const getApplicationWindowStatus = (job: Job, nowMs?: number): Applicatio
   const closeTime = hasValidClose ? new Date(job.closeOn!).getTime() : null;
 
   // 1. Admin Override takes absolute highest priority:
-  if (job.adminForceStatus === 'closed') {
+  if (job.adminForceStatus === 'closed' || job.adminOverrideClosed) {
     return {
       isOpen: false,
       status: 'closed',
-      badgeLabel: 'Closed (Admin Override)',
+      badgeLabel: 'Force Closed',
       reason: 'Admin has forcefully closed this listing.',
       isOverriddenByAdmin: true,
     };

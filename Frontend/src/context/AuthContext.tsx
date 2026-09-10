@@ -51,6 +51,7 @@ interface AuthContextType {
   seekerProfile: SeekerProfile | null;
   updateSeekerProfile: (profile: Partial<SeekerProfile>) => void;
   completeSeekerOnboarding: (profile: SeekerProfile) => void;
+  updateProfilePicture: (avatarUrl: string) => Promise<void>;
   // Jobs data & actions
   jobs: Job[];
   addJob: (newJob: Omit<Job, 'id' | 'postedDate' | 'isClosed'> & { isClosed?: boolean; id?: string }) => void;
@@ -387,12 +388,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const mappedRole: UserRole =
           res.user.role === 'candidate' ? 'seeker' : (res.user.role as UserRole);
 
+        const avatar = res.user.avatar_url || res.user.avatarUrl;
+        const isComplete = mappedRole === 'seeker'
+          ? (res.user.isProfileComplete ?? Boolean(avatar && avatar.trim() !== ''))
+          : true;
+
         const loggedUser: User = {
           id: res.user.id,
           role: mappedRole,
           name: res.user.name,
           email: res.user.email,
-          avatarUrl: res.user.avatar_url,
+          avatarUrl: avatar,
+          isProfileComplete: isComplete,
           sessionToken: res.token,
           title:
             mappedRole === 'seeker'
@@ -430,12 +437,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const mappedRole: UserRole =
       verifiedUser.role === 'candidate' ? 'seeker' : (verifiedUser.role || 'seeker');
 
+    const avatar = verifiedUser.avatar_url || verifiedUser.avatarUrl;
+    const isComplete = mappedRole === 'seeker'
+      ? (verifiedUser.isProfileComplete ?? Boolean(avatar && avatar.trim() !== ''))
+      : true;
+
     const loggedUser: User = {
       id: verifiedUser.id,
       role: mappedRole,
       name: userName,
       email: userEmail,
-      avatarUrl: verifiedUser.avatar_url || verifiedUser.avatarUrl,
+      avatarUrl: avatar,
+      isProfileComplete: isComplete,
       sessionToken: session.token,
       title:
         mappedRole === 'seeker'
@@ -616,6 +629,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const updateProfilePicture = async (avatarUrl: string) => {
+    if (!user) return;
+    try {
+      if (user.role === 'seeker') {
+        await api.candidate.upsertProfile({ avatarUrl });
+      }
+    } catch (err) {
+      console.warn('Backend update avatar error:', err);
+    }
+    const updatedUser: User = {
+      ...user,
+      avatarUrl,
+      isProfileComplete: true,
+      seekerProfile: user.seekerProfile
+        ? { ...user.seekerProfile, avatarUrl }
+        : { ...EMPTY_SEEKER_PROFILE, avatarUrl },
+    };
+    setUser(updatedUser);
+    sessionStorage.setItem('hirehub_user', JSON.stringify(updatedUser));
+  };
+
 
   const addJob = (newJobData: Omit<Job, 'id' | 'postedDate' | 'isClosed'> & { isClosed?: boolean; id?: string }) => {
     const newId = newJobData.id || `job-${Date.now()}`;
@@ -657,6 +691,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const deleteJob = (jobId: string) => {
     setJobs((prev) => prev.filter((j) => j.id !== jobId));
+    setApplications((prev) => prev.filter((a) => a.jobId !== jobId));
   };
 
   const toggleJobStatus = (jobId: string) => {
@@ -838,6 +873,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         seekerProfile,
         updateSeekerProfile,
         completeSeekerOnboarding,
+        updateProfilePicture,
         jobs,
         addJob,
         updateJob,

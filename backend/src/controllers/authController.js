@@ -56,6 +56,21 @@ const googleLogin = async (req, res) => {
 
     const token = generateToken(user);
 
+    const candidateProfile = user.role === 'candidate' ? await CandidateProfile.findOne({ where: { userId: user.id } }) : null;
+    const avatarUrl = user.avatarUrl || candidateProfile?.avatarUrl || null;
+    const isProfileComplete = user.role === 'candidate'
+      ? Boolean(
+          user.isProfileComplete ||
+          candidateProfile?.isProfileComplete ||
+          candidateProfile?.college ||
+          candidateProfile?.cgpa ||
+          (candidateProfile?.certifications && candidateProfile.certifications.length > 0) ||
+          (candidateProfile?.interestedRoles && candidateProfile.interestedRoles.length > 0) ||
+          user.avatarUrl ||
+          candidateProfile?.avatarUrl
+        )
+      : true;
+
     return res.json({
       token,
       user: {
@@ -63,6 +78,10 @@ const googleLogin = async (req, res) => {
         email: user.email,
         name: user.name,
         role: user.role,
+        avatar_url: avatarUrl,
+        avatarUrl: avatarUrl,
+        isProfileComplete,
+        hasProfilePicture: Boolean(avatarUrl && avatarUrl.trim() !== ''),
       },
     });
   } catch (error) {
@@ -141,6 +160,20 @@ const loginWithPassword = async (req, res) => {
     }
 
     const token = generateToken(user);
+    const candidateProfile = user.role === 'candidate' ? await CandidateProfile.findOne({ where: { userId: user.id } }) : null;
+    const avatarUrl = user.avatarUrl || candidateProfile?.avatarUrl || null;
+    const isProfileComplete = user.role === 'candidate'
+      ? Boolean(
+          user.isProfileComplete ||
+          candidateProfile?.isProfileComplete ||
+          candidateProfile?.college ||
+          candidateProfile?.cgpa ||
+          (candidateProfile?.certifications && candidateProfile.certifications.length > 0) ||
+          (candidateProfile?.interestedRoles && candidateProfile.interestedRoles.length > 0) ||
+          user.avatarUrl ||
+          candidateProfile?.avatarUrl
+        )
+      : true;
 
     return res.json({
       token,
@@ -149,6 +182,10 @@ const loginWithPassword = async (req, res) => {
         email: user.email,
         name: user.name,
         role: user.role,
+        avatar_url: avatarUrl,
+        avatarUrl: avatarUrl,
+        isProfileComplete,
+        hasProfilePicture: Boolean(avatarUrl && avatarUrl.trim() !== ''),
       },
     });
   } catch (error) {
@@ -175,16 +212,21 @@ const getMe = async (req, res) => {
 
     if (user.role === 'candidate') {
       const profile = user.candidateProfile;
+      const avatarUrl = user.avatarUrl || profile?.avatarUrl || null;
       const isProfileComplete = Boolean(
-        profile &&
-        profile.college &&
-        profile.college.trim() !== '' &&
-        profile.cgpa !== null &&
-        profile.cgpa !== undefined &&
-        profile.passingYear !== null &&
-        profile.passingYear !== undefined
+        user.isProfileComplete ||
+        profile?.isProfileComplete ||
+        profile?.college ||
+        profile?.cgpa ||
+        (profile?.certifications && profile.certifications.length > 0) ||
+        (profile?.interestedRoles && profile.interestedRoles.length > 0) ||
+        user.avatarUrl ||
+        profile?.avatarUrl
       );
+      userData.avatar_url = avatarUrl;
+      userData.avatarUrl = avatarUrl;
       userData.isProfileComplete = isProfileComplete;
+      userData.hasProfilePicture = Boolean(avatarUrl && avatarUrl.trim() !== '');
     }
 
     return res.json({ user: userData });

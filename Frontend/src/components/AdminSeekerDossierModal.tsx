@@ -17,6 +17,8 @@ import {
   ShieldCheck,
   UserX,
   UserCheck,
+  FileText,
+  Download,
 } from 'lucide-react';
 
 interface AdminSeekerDossierModalProps {
@@ -320,12 +322,36 @@ export const AdminSeekerDossierModal: React.FC<AdminSeekerDossierModalProps> = (
                       <div className="font-bold text-neutral-900 dark:text-white">
                         {app.role}
                       </div>
-                      <div className="text-neutral-500 text-[11px] flex items-center gap-2 mt-0.5">
+                      <div className="text-neutral-500 text-[11px] flex items-center gap-2 mt-0.5 flex-wrap">
                         <span className="text-neutral-700 dark:text-neutral-300 font-semibold">{app.company}</span>
                         <span>•</span>
                         <span>{app.payRange}</span>
                         <span>•</span>
                         <span>Applied: {app.appliedDate}</span>
+                        {app.resumeUrl ? (
+                          <>
+                            <span>•</span>
+                            <a
+                              href={app.resumeUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-emerald-600 dark:text-emerald-400 hover:underline inline-flex items-center gap-1 font-semibold"
+                              title="Download candidate submitted resume from Cloud Storage"
+                            >
+                              <FileText className="w-3 h-3 text-emerald-500" />
+                              <span>{app.resumeFileName || 'Submitted_Resume.pdf'}</span>
+                              <Download className="w-3 h-3 ml-0.5" />
+                            </a>
+                          </>
+                        ) : app.resumeFileName ? (
+                          <>
+                            <span>•</span>
+                            <span className="text-neutral-600 dark:text-neutral-400 inline-flex items-center gap-1">
+                              <FileText className="w-3 h-3 text-emerald-500" />
+                              <span>{app.resumeFileName}</span>
+                            </span>
+                          </>
+                        ) : null}
                       </div>
                     </div>
 

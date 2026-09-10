@@ -22,6 +22,8 @@ interface ApplyModalProps {
   onClose: () => void;
   onSubmit: (job: Job, data: { resumeFileName: string; answers: ApplicationAnswer[]; resumeUrl?: string }) => void;
   defaultCandidateName?: string;
+  initialResumeUrl?: string;
+  initialResumeFileName?: string;
 }
 
 export const ApplyModal: React.FC<ApplyModalProps> = ({
@@ -30,7 +32,8 @@ export const ApplyModal: React.FC<ApplyModalProps> = ({
   onClose,
   onSubmit,
   defaultCandidateName = 'Candidate',
-
+  initialResumeUrl,
+  initialResumeFileName,
 }) => {
   if (!isOpen || !job) return null;
 
@@ -49,15 +52,27 @@ export const ApplyModal: React.FC<ApplyModalProps> = ({
   // Form State
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [resumeFileName, setResumeFileName] = useState<string>(
-    `${defaultCandidateName.replace(/\s+/g, '_')}_Resume_2026.pdf`
+    initialResumeFileName || `${defaultCandidateName.replace(/\s+/g, '_')}_Resume_2026.pdf`
   );
-  const [uploadedFilePath, setUploadedFilePath] = useState<string | null>(null);
+  const [uploadedFilePath, setUploadedFilePath] = useState<string | null>(initialResumeUrl || null);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [answers, setAnswers] = useState<string[]>(() =>
     questionsToUse.map(() => '')
   );
   const [isDragging, setIsDragging] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Sync initial resume props when modal opens
+  React.useEffect(() => {
+    if (isOpen) {
+      if (initialResumeFileName) {
+        setResumeFileName(initialResumeFileName);
+      }
+      if (initialResumeUrl) {
+        setUploadedFilePath(initialResumeUrl);
+      }
+    }
+  }, [isOpen, initialResumeFileName, initialResumeUrl]);
 
   const uploadFileToGCS = async (file: File) => {
     setIsUploading(true);

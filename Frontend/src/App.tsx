@@ -8,6 +8,7 @@ import { SeekerDashboard } from './pages/SeekerDashboard';
 import { RecruiterDashboard } from './pages/RecruiterDashboard';
 import { RecruiterPostJobPage } from './pages/RecruiterPostJobPage';
 import { AdminDashboard } from './pages/AdminDashboard';
+import { CompleteProfilePage } from './pages/CompleteProfilePage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 export default function App() {
@@ -21,6 +22,16 @@ export default function App() {
 
             {/* Role-based Login & Registration Page */}
             <Route path="/login" element={<LoginPage />} />
+
+            {/* Protected Job Seeker Mandatory Profile Completion Route */}
+            <Route
+              path="/seeker/complete-profile"
+              element={
+                <ProtectedRoute allowedRole="seeker" allowIncompleteProfile={true}>
+                  <CompleteProfilePage />
+                </ProtectedRoute>
+              }
+            />
 
             {/* Protected Job Seeker Route */}
             <Route
