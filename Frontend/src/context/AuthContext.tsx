@@ -347,9 +347,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const recruiterJobs = await api.recruiter.getMyJobs().catch(() => []);
           setJobs(recruiterJobs);
         } else if (user.role === 'seeker') {
-
           const liveJobs = await api.jobs.getJobs().catch(() => []);
           setJobs(liveJobs);
+
+          const profileRes = await api.candidate.getProfile().catch(() => null);
+          if (profileRes && profileRes.profile) {
+            const p = profileRes.profile;
+            const mappedSeekerProf: SeekerProfile = {
+              fullName: user.name || 'Candidate',
+              collegeName: p.college || '',
+              cgpa: p.cgpa ? parseFloat(p.cgpa) : 0,
+              certifications: p.certifications || [],
+              passingYear: p.passingYear ? String(p.passingYear) : '',
+              interestedRoles: p.interestedRoles || [],
+              linkedInUrl: p.linkedinUrl || '',
+              portfolioUrl: p.portfolioUrl || '',
+              skills: [],
+              isOnboarded: Boolean(p.isProfileComplete || p.college),
+            };
+            setSeekerProfile(mappedSeekerProf);
+            if (p.isProfileComplete || p.college) {
+              setUser((prev) => prev ? { ...prev, isProfileComplete: true, seekerProfile: mappedSeekerProf } : null);
+            }
+          }
+
           await Promise.all([refreshCandidateStats(), refreshNotifications()]);
         } else if (user.role === 'admin') {
           const [allJobs, allUsers] = await Promise.all([
@@ -389,8 +410,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           res.user.role === 'candidate' ? 'seeker' : (res.user.role as UserRole);
 
         const avatar = res.user.avatar_url || res.user.avatarUrl;
+        const candidateProf: SeekerProfile | null = res.user.seekerProfile || res.user.candidateProfile || null;
+        if (candidateProf) {
+          setSeekerProfile(candidateProf);
+        }
+
         const isComplete = mappedRole === 'seeker'
-          ? (res.user.isProfileComplete ?? Boolean(avatar && avatar.trim() !== ''))
+          ? Boolean(res.user.isProfileComplete || (candidateProf && (candidateProf.isOnboarded || candidateProf.collegeName)))
           : true;
 
         const loggedUser: User = {
@@ -408,7 +434,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               ? 'Lead Technical Recruiter'
               : 'Super Admin & Platform Director',
           company: mappedRole === 'recruiter' ? (res.user as any).RecruiterProfile?.companyName || (res.user as any).company || undefined : undefined,
-          ...(mappedRole === 'seeker' ? { seekerProfile: seekerProfile || undefined } : {}),
+          ...(mappedRole === 'seeker' ? { seekerProfile: candidateProf || seekerProfile || undefined } : {}),
         };
 
         setUser(loggedUser);
@@ -438,8 +464,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       verifiedUser.role === 'candidate' ? 'seeker' : (verifiedUser.role || 'seeker');
 
     const avatar = verifiedUser.avatar_url || verifiedUser.avatarUrl;
+    const candidateProf: SeekerProfile | null = verifiedUser.seekerProfile || verifiedUser.candidateProfile || null;
+    if (candidateProf) {
+      setSeekerProfile(candidateProf);
+    }
+
     const isComplete = mappedRole === 'seeker'
-      ? (verifiedUser.isProfileComplete ?? Boolean(avatar && avatar.trim() !== ''))
+      ? Boolean(verifiedUser.isProfileComplete || (candidateProf && (candidateProf.isOnboarded || candidateProf.collegeName)))
       : true;
 
     const loggedUser: User = {
@@ -459,7 +490,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       company: mappedRole === 'recruiter' ? (verifiedUser as any).RecruiterProfile?.companyName || (verifiedUser as any).company || undefined : undefined,
       ...(mappedRole === 'seeker'
         ? {
-            seekerProfile: seekerProfile || undefined,
+            seekerProfile: candidateProf || seekerProfile || undefined,
           }
         : {}),
     };

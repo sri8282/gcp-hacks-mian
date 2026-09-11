@@ -63,6 +63,7 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
     strengths?: string[];
     gaps?: string[];
     summary?: string;
+    source?: 'gemini-ai' | 'keyword-fallback';
   } | null>(null);
 
   // ATS Resume Upload State
@@ -291,10 +292,12 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
         strengths: res.strengths || [],
         gaps: res.gaps || [],
         summary: res.summary || '',
+        source: res.source === 'keyword-fallback' ? 'keyword-fallback' : 'gemini-ai',
       });
     } catch (err: any) {
       console.warn('API checkAts failed in JobDetailModal, using keyword fallback:', err);
       setScanProgress(100);
+
       const matchRatio = skills.length > 0 ? matched.length / skills.length : 0;
       const finalScore = Math.min(100, Math.max(0, Math.round(matchRatio * 100)));
 
@@ -303,10 +306,11 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
         matchGrade: getMatchGrade(finalScore),
         matchedSkills: matched,
         missingSkills: missing,
-        suggestions: ['Evaluated using keyword matching fallback.'],
-        strengths: [],
-        gaps: [],
-        summary: 'Keyword matching analysis was used.',
+        suggestions: ['Evaluated using skill keyword match analysis.'],
+        strengths: matched.length > 0 ? [`Found matching skill terms: ${matched.join(', ')}`] : [],
+        gaps: missing.length > 0 ? [`Missing skill terms: ${missing.join(', ')}`] : [],
+        summary: `Keyword match score based on ${matched.length} of ${skills.length} skills found in dossier.`,
+        source: 'keyword-fallback',
       });
     } finally {
       setIsScanning(false);
@@ -888,7 +892,7 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
                               {scanResult.matchGrade}
                             </span>
                             <span className="text-xs font-mono text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-                              <Sparkles className="w-3 h-3" /> ATS Evaluated
+                              <Sparkles className="w-3 h-3" /> {scanResult.source === 'keyword-fallback' ? 'Keyword Match' : 'AI Match'}
                             </span>
                           </div>
                           <p className="text-xs font-sans text-neutral-600 dark:text-neutral-400 leading-normal">

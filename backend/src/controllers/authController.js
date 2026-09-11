@@ -11,6 +11,21 @@ const generateToken = (user) => {
   );
 };
 
+const formatCandidateProfilePayload = (candidateProfile, userName) => {
+  if (!candidateProfile) return null;
+  return {
+    fullName: userName || 'Candidate',
+    collegeName: candidateProfile.college || '',
+    cgpa: candidateProfile.cgpa ? parseFloat(candidateProfile.cgpa) : 0,
+    certifications: candidateProfile.certifications || [],
+    passingYear: candidateProfile.passingYear ? String(candidateProfile.passingYear) : '',
+    interestedRoles: candidateProfile.interestedRoles || [],
+    linkedInUrl: candidateProfile.linkedinUrl || '',
+    portfolioUrl: candidateProfile.portfolioUrl || '',
+    isOnboarded: Boolean(candidateProfile.isProfileComplete || candidateProfile.college),
+  };
+};
+
 const googleLogin = async (req, res) => {
   try {
     const { idToken } = req.body;
@@ -65,11 +80,11 @@ const googleLogin = async (req, res) => {
           candidateProfile?.college ||
           candidateProfile?.cgpa ||
           (candidateProfile?.certifications && candidateProfile.certifications.length > 0) ||
-          (candidateProfile?.interestedRoles && candidateProfile.interestedRoles.length > 0) ||
-          user.avatarUrl ||
-          candidateProfile?.avatarUrl
+          (candidateProfile?.interestedRoles && candidateProfile.interestedRoles.length > 0)
         )
       : true;
+
+    const formattedProfile = formatCandidateProfilePayload(candidateProfile, user.name);
 
     return res.json({
       token,
@@ -82,6 +97,8 @@ const googleLogin = async (req, res) => {
         avatarUrl: avatarUrl,
         isProfileComplete,
         hasProfilePicture: Boolean(avatarUrl && avatarUrl.trim() !== ''),
+        seekerProfile: formattedProfile,
+        candidateProfile: formattedProfile,
       },
     });
   } catch (error) {
@@ -169,11 +186,11 @@ const loginWithPassword = async (req, res) => {
           candidateProfile?.college ||
           candidateProfile?.cgpa ||
           (candidateProfile?.certifications && candidateProfile.certifications.length > 0) ||
-          (candidateProfile?.interestedRoles && candidateProfile.interestedRoles.length > 0) ||
-          user.avatarUrl ||
-          candidateProfile?.avatarUrl
+          (candidateProfile?.interestedRoles && candidateProfile.interestedRoles.length > 0)
         )
       : true;
+
+    const formattedProfile = formatCandidateProfilePayload(candidateProfile, user.name);
 
     return res.json({
       token,
@@ -186,6 +203,8 @@ const loginWithPassword = async (req, res) => {
         avatarUrl: avatarUrl,
         isProfileComplete,
         hasProfilePicture: Boolean(avatarUrl && avatarUrl.trim() !== ''),
+        seekerProfile: formattedProfile,
+        candidateProfile: formattedProfile,
       },
     });
   } catch (error) {
@@ -219,14 +238,15 @@ const getMe = async (req, res) => {
         profile?.college ||
         profile?.cgpa ||
         (profile?.certifications && profile.certifications.length > 0) ||
-        (profile?.interestedRoles && profile.interestedRoles.length > 0) ||
-        user.avatarUrl ||
-        profile?.avatarUrl
+        (profile?.interestedRoles && profile.interestedRoles.length > 0)
       );
+      const formattedProfile = formatCandidateProfilePayload(profile, user.name);
       userData.avatar_url = avatarUrl;
       userData.avatarUrl = avatarUrl;
       userData.isProfileComplete = isProfileComplete;
       userData.hasProfilePicture = Boolean(avatarUrl && avatarUrl.trim() !== '');
+      userData.seekerProfile = formattedProfile;
+      userData.candidateProfile = formattedProfile;
     }
 
     return res.json({ user: userData });

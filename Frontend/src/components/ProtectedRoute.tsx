@@ -23,9 +23,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   const roleStr = user.role as string;
   const isCandidate = roleStr === 'seeker' || roleStr === 'candidate';
   const isRecruiter = roleStr === 'recruiter';
-  const isProfileIncomplete = isCandidate && (!user.avatarUrl || user.isProfileComplete === false);
+  const isProfileIncomplete = isCandidate && user.isProfileComplete === false;
 
-  // If candidate's profile picture is not set, redirect to complete-profile page
+  // If candidate's profile is not complete, redirect to complete-profile page
   if (isCandidate && isProfileIncomplete && !allowIncompleteProfile) {
     return <Navigate to="/seeker/complete-profile" replace />;
   }
